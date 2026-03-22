@@ -1,0 +1,34 @@
+# 编译产物
+*.o
+*.a
+*.so
+*.out
+*.exe
+
+# 无扩展名可执行文件（C/C++ 默认输出）
+# 用白名单策略：只跟踪明确的文档和代码类型
+
+# CMake / Make 构建目录
+build/
+cmake-build-*/
+CMakeFiles/
+CMakeCache.txt
+Makefile.cmake
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# 编辑器 / IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# 系统文件
+.DS_Store
+Thumbs.db

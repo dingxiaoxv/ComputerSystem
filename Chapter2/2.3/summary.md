@@ -190,3 +190,46 @@ if (__builtin_add_overflow(a, b, &result)) {
 - `size_t` 做循环计数器的下溢陷阱（`i >= 0` 恒为真）
 - `malloc(n * sizeof(int))` 若 `n` 很大会溢出，应用 `calloc`
 - GCC 在 `-O2` 下假设有符号整数不会溢出，可能消除"溢出检查"代码
+
+---
+
+## 实验题：有符号溢出 UB + 负数除法偏置
+
+**文件**：`Chapter2/2.3/exp_overflow_ub.cpp`
+**编译**：
+```bash
+# 两次，分别观察汇编
+g++ -std=c++17 -O0 -S -o exp_O0.s exp_overflow_ub.cpp
+g++ -std=c++17 -O2 -S -o exp_O2.s exp_overflow_ub.cpp
+# 运行用
+g++ -std=c++17 -O2 -o exp_overflow_ub exp_overflow_ub.cpp
+```
+
+### 任务
+
+写一个 C++ 程序，包含以下三个部分：
+
+**Part 1**：`bool is_overflow_wrong(int x)` 和 `bool is_overflow_right(int x)`
+
+- `wrong` 版本：`return x + 1 > x;`（这是有符号溢出 UB，-O2 下会被优化掉）
+- `right` 版本：`return x == INT_MAX;`（正确写法）
+- 在 `main` 里传入 `INT_MAX`，打印两个函数的返回值
+- **然后看汇编**：对比 `exp_O0.s` 和 `exp_O2.s` 中 `is_overflow_wrong` 的指令，`-O2` 下函数体变成了什么？
+
+**Part 2**：`void exp_neg_shift()`
+
+- 计算 `-7 / 2` 和 `-7 >> 1`，打印两者的值
+- 它们不相等——为什么？（提示：一个向零取整，一个向负无穷取整）
+- 再打印 `-8 / 2` 和 `-8 >> 1`，这次相等吗？为什么？
+
+**Part 3**：`void exp_compiler_div()`
+
+- 写一个函数 `int div4(int x) { return x / 4; }`（单独写，方便看汇编）
+- 对比 `exp_O2.s` 里 `div4` 的实现和你预期的"直接右移2位"有什么不同
+- 找到汇编里的偏置修正（`sar` + `add` 或 `lea`），对应 §2.3.7 的公式
+
+### 思考题（写在代码注释里）
+
+1. Part 1 中，为什么说有符号溢出是 UB？如果编译器不假设"不会溢出"，它能做哪些优化？
+2. Part 2 中，`-7 >> 1` 得到 `-4` 而不是 `-3`，从补码位模式角度解释。
+3. Part 3 中，编译器加的偏置是 `(x + 3) >> 2` 还是别的？和 §2.3.7 公式对上了吗？

@@ -136,3 +136,44 @@ for (unsigned i = 0; i <= length - 1; i++)
 - C++ 容器 `.size()` 返回 `size_t`，与 `int` 比较会触发隐式转换警告，正确写法是强转：`(int)vec.size()`
 - Linux 内核大量用 `u32/u64`，代码审计时须注意无符号绕回（wraparound）
 - TCP 序列号用无符号绕回实现循环计数，这是有意为之的设计
+
+---
+
+## 实验题：有符号/无符号隐式转换陷阱
+
+**文件**：`Chapter2/2.2/exp_implicit_conv.cpp`
+**编译**：`g++ -std=c++17 -Wall -Wconversion -o exp_implicit_conv exp_implicit_conv.cpp`
+
+### 任务
+
+写一个 C++ 程序，包含以下四个函数，每个函数演示一种转换陷阱，**打印出转换前后的实际数值**，让结果可观察。
+
+**函数 1**：`void exp_mixed_compare()`
+
+- 定义 `int a = -1` 和 `unsigned int b = 0`
+- 打印 `a < b` 的结果（会是 `false`，为什么？）
+- 打印 `(unsigned int)a` 的十六进制值，解释发生了什么
+
+**函数 2**：`void exp_strlen_sub()`
+
+- 定义两个字符串，令 `strlen(s) < strlen(t)`
+- 打印 `strlen(s) - strlen(t)` 的值（注意 `strlen` 返回 `size_t`）
+- 打印 `strlen(s) - strlen(t) > 0` 的结果，应为 `true`（违反直觉！）
+
+**函数 3**：`void exp_unsigned_loop()`
+
+- 用 `std::vector<int> v = {10, 20, 30}` 做倒序遍历
+- 用 `size_t i = v.size() - 1; i >= 0; i--` 这个**错误写法**，观察 `i` 在 `0` 之后变成什么值
+- 加 guard 限制只跑 5 次，打印每次的 `i` 值
+
+**函数 4**：`void exp_sizet_int()`
+
+- 定义 `std::vector<int> v(3)` 和 `int n = -1`
+- 打印 `n < (int)v.size()` 和 `n < v.size()` 的结果对比
+- 打印 `(size_t)n` 的值，解释差异来源
+
+### 思考题（写在代码注释里）
+
+1. 实验 1 和实验 4 的根本原因相同，是什么规则在起作用？
+2. 实验 2 中，如果要正确判断 s 是否比 t 长，应该怎么写？
+3. `-Wconversion` 警告了哪几处？

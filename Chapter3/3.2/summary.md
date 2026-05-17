@@ -1,75 +1,181 @@
-# §3.2–3.3 汇编入门 + 数据格式
+# §3.2-3.3 汇编入门与数据格式
 
-## 核心概念
+这一节的主线是：**学会用工具链把 C 代码变成可读的汇编，并建立"x86-64 数据宽度后缀"这一最基本的阅读直觉**。`gcc -S` 看到的是带大量伪指令的中间产物，`objdump -d` 才是 CPU 实际执行的指令；指令后缀 b/w/l/q 直接对应 1/2/4/8 字节，几乎决定了你怎么读懂一段汇编。
 
-### 编译工具链
+---
+
+## 编译工具链
+
+**🎯 四个命令对应的产物**
 
 | 命令 | 产物 | 作用 |
 |------|------|------|
 | `gcc -S mstore.c` | `mstore.s` | 停在汇编阶段，看 C → 汇编映射 |
-| `gcc -c mstore.c` | `mstore.o` | 产生目标文件（机器码，未链接） |
+| `gcc -c mstore.c` | `mstore.o` | 目标文件（机器码 + 重定位信息，未链接） |
 | `gcc mstore.c main.c -o prog` | `prog` | 完整链接，产生可执行文件 |
-| `objdump -d mstore.o` | 终端输出 | 反汇编，机器码 → 助记符 |
+| `objdump -d mstore.o` | 终端反汇编 | 机器码 → 助记符 |
 
-### `.s` 与 `objdump` 的区别
+**🎯 `.s` 与 `objdump` 的差异**
 
-- `gcc -S` 输出带大量**伪指令**（`.globl`、`.cfi_*`、`.type`），供汇编器和调试器使用，不是真实指令
-- `objdump -d` 输出**实际执行的机器码 + 助记符**，更接近 CPU 真正执行的内容
+- `gcc -S` 输出大量伪指令（`.globl` / `.cfi_*` / `.type` / `.size`），它们是给汇编器、链接器、调试器用的元信息，不是 CPU 指令
+- `objdump -d` 输出的是真正会被 CPU 执行的指令序列
 
-实验里 `mstore.s` 有 20+ 行，`objdump` 只有 6 条真实指令（`endbr64` 到 `ret`）。
+同一个 `multstore` 函数，`.s` 有 20+ 行，`objdump` 反汇编后只剩 6 条真实指令——其余全是元信息。
 
-### x86-64 数据宽度后缀
+---
 
-| 后缀 | 大小 | C 类型 |
-|------|------|--------|
+## x86-64 数据宽度后缀
+
+**🎯 b / w / l / q 对应 1/2/4/8 字节**
+
+| 后缀 | 大小 | 对应 C 类型 |
+|------|------|------------|
 | `b` | 1 字节 | `char` |
 | `w` | 2 字节 | `short` |
 | `l` | 4 字节 | `int` |
 | `q` | 8 字节 | `long`、指针 |
 
-`mstore.s` 里全是 `movq`/`pushq`/`popq`，因为 `long` 和指针在 x86-64 上都是 64 位。
+读汇编时先扫一眼后缀，就知道这条指令在搬几字节——这是判断变量类型的最快线索。
+
+**🔧 x86-64 上 `long` 和指针都是 `q`**
+
+`multstore` 反汇编里全是 `movq` / `pushq` / `popq`，因为参数和返回值都是 `long*` 和 `long`，宽度都是 8 字节。如果看到 `movl`，说明源代码里多半是 `int`。
 
 ---
 
-## 实验：multsore 汇编逐行解读
+## `multstore` 反汇编逐行解读
 
-**源码：**
+**🎯 源码**
 
 ```c
 long mult2(long, long);
 
-void multsore(long x, long y, long *dest) {
-  long t = mult2(x, y);
-  *dest = t;
+void multstore(long x, long y, long* dest) {
+    long t = mult2(x, y);
+    *dest = t;
 }
 ```
 
-**反汇编输出：**
+**🎯 反汇编**
 
 ```asm
-multsore:
-    endbr64              ; CET 安全指令（现代 GCC 默认插入，可忽略）
-    pushq  %rbx          ; 保存 callee-saved 寄存器 rbx
-    movq   %rdx, %rbx   ; 把第 3 个参数 dest 暂存进 rbx
-    call   mult2@PLT     ; 调用 mult2(x, y)，结果存入 %rax
-    movq   %rax, (%rbx) ; *dest = t，间接寻址
-    popq   %rbx          ; 恢复 rbx
+multstore:
+    endbr64               ; CET 安全指令（现代 GCC 默认插入，可忽略）
+    pushq  %rbx           ; 保存 callee-saved 寄存器
+    movq   %rdx, %rbx     ; 把第 3 参数 dest 暂存到 %rbx
+    call   mult2@PLT      ; 调用 mult2(x, y)，返回值进 %rax
+    movq   %rax, (%rbx)   ; *dest = t
+    popq   %rbx           ; 恢复 %rbx
     ret
 ```
 
-**三个关键点：**
+**🎯 三个关键点**
 
-1. **Linux x86-64 调用约定**：前 6 个整数参数依次使用 `rdi rsi rdx rcx r8 r9`；返回值放 `rax`
-2. **`%rbx` 是 callee-saved**：`call mult2` 可能破坏 caller-saved 寄存器（含 `%rdx`），所以必须提前把 `dest` 存进 callee-saved 的 `%rbx`，并在函数末尾 `pop` 恢复
-3. **`(%rbx)` 是间接寻址**：`movq %rax, (%rbx)` = 把 rax 的值写到 rbx 所指向的地址，对应 `*dest = t`
+1. **调用约定**：Linux x86-64 ABI 前 6 个整数参数依次走 `%rdi %rsi %rdx %rcx %r8 %r9`，返回值进 `%rax`
+2. **为什么把 `dest` 搬到 `%rbx`**：`call mult2` 可能破坏所有 caller-saved 寄存器（包含 `%rdx`），`%rbx` 是 callee-saved，存进去才安全；函数末尾 `popq` 恢复保证调用者看不到改动
+3. **`(%rbx)` 是间接寻址**：把 `%rax` 写到 `%rbx` 所指地址处，对应 C 里的 `*dest = t`
 
-**`call` 地址全零的原因：**
-`mstore.o` 是单独编译的目标文件，`mult2` 的地址要等链接时才能填上，这就是**重定位**（§7 详讲）。
+**⚠️ `call` 地址全零是因为未链接**
+
+`mstore.o` 是单独编译的目标文件，`mult2` 的实际地址要等链接器解析符号后才能填上——这就是 §7 要讲的重定位（relocation）。
 
 ---
 
-## 三句话总结
+## 易错点
 
-- **最重要的概念**：`gcc -S` 产物含大量元信息，真正执行的指令用 `objdump -d` 才看得最清楚
-- **最容易错的点**：`%rdx`（dest）要存进 `%rbx` 是因为 `call` 之后 caller-saved 寄存器可能被破坏，`%rbx` 是 callee-saved 才安全
-- **工程对应**：ABI 调用约定是跨模块编译正确链接的基础；`objdump -d` 是 crash/core dump 分析的常用工具
+- `gcc -S` 产物里大量 `.cfi_*` / `.type` / `.size` 是伪指令，不是真实 CPU 指令，读汇编时要会忽略
+- `mstore.o` 反汇编里 `call` 的目标地址全是 0 不是 bug，是因为符号还没被链接器解析
+- 指令后缀 b/w/l/q 看的是宽度而不是类型，`movl` 和 `movq` 都可能搬运 `int` 或 `unsigned`，靠后缀分不出有符号性
+- `endbr64` 是 CET 安全功能插入的指令，与函数逻辑无关，分析时直接略过
+- `%rbx` 用于暂存 `dest` 不是随意决定，是 caller-saved / callee-saved 约定带来的必然结果
+- AT&T 语法源在左、目的在右；后续章节读 `subq %rax, %rdx` 是 `rdx -= rax`，不是反过来
+
+---
+
+## 工程关联
+
+- ABI 调用约定（`%rdi/%rsi/...` 顺序、`%rax` 返回、callee-saved 集合）是跨模块编译能正确链接的基础；改 ABI 等于全系统 ABI break
+- 看 core dump / GDB `bt` 时，理解栈帧和寄存器保存约定才能从 `%rax` / `%rdi` 反推出"哪个函数返回值是什么、第几个参数是什么"
+- `objdump -d` 是分析 crash、看 panic 调用栈、定位优化级别差异（`-O0` vs `-O2`）的第一工具
+- 链接器报 `undefined reference` 时，反汇编里看到 `call <symbol>@PLT` 加上全零的偏移就是直接证据
+- `endbr64` / Shadow Stack 等 CET 指令在新 Intel CPU 上对应 ROP 攻击防护，是现代发行版默认启用的硬件级安全机制
+
+---
+
+## 实验题
+
+**🧪 题 1：`gcc -S` vs `objdump -d` 输出对比**
+
+```c
+// mstore.c
+long mult2(long, long);
+void multstore(long x, long y, long* dest) {
+    long t = mult2(x, y);
+    *dest = t;
+}
+```
+
+要求：
+
+- `gcc -O1 -S mstore.c -o mstore.s` 看 `.s`
+- `gcc -O1 -c mstore.c && objdump -d mstore.o` 看反汇编
+- 数一下：`.s` 里有多少行，反汇编里真实指令多少行
+- 找出 `.s` 里 `objdump` 不显示的 3 种伪指令
+
+**🧪 题 2：`-O0` vs `-O2` 编译差异**
+
+```c
+long sum(long n) {
+    long s = 0;
+    for (long i = 0; i < n; ++i) s += i;
+    return s;
+}
+```
+
+要求：
+
+- 分别 `-O0 -S` 和 `-O2 -S`，对比函数体
+- 找出 `-O2` 下编译器把循环替换成等差求和公式的证据（应该只剩 `imul` / `lea` 等几条算术指令）
+- 数指令数量差异
+
+**🧪 题 3：数据宽度后缀与 C 类型的对应**
+
+```c
+int   f_int (int   x) { return x + 1; }
+long  f_long(long  x) { return x + 1; }
+short f_short(short x) { return x + 1; }
+char  f_char (char  x) { return x + 1; }
+```
+
+要求：
+
+- `gcc -O1 -S` 编译，找出每个函数里 `add` 指令的后缀
+- 列出后缀和类型的对应表，验证 b/w/l/q 直觉
+- 注意：`f_short` 和 `f_char` 的返回值可能用 `movzbl` / `movsbl` 扩展，理解为什么
+
+**🧪 题 4：未链接目标文件的 `call` 地址**
+
+要求：
+
+- `gcc -c mstore.c -o mstore.o`，`objdump -d mstore.o` 看 `call` 后面的地址
+- 链接：`gcc mstore.c main.c -o prog`，`objdump -d prog` 再看同一个 `call`
+- 解释两次结果差异的来源（重定位）
+- 用 `readelf -r mstore.o` 看重定位表里关于 `mult2` 的条目
+
+**🧪 题 5：手动从汇编反推 C**
+
+给定汇编：
+
+```asm
+endbr64
+movq   %rsi, %rax
+addq   (%rdi), %rax
+movq   %rax, (%rdi)
+ret
+```
+
+要求：
+
+- 推测函数签名（参数类型、返回类型、参数数量）
+- 写出最可能对应的 C 代码
+- 解释为什么参数是 `%rdi`（指针）和 `%rsi`（值）而不是反过来

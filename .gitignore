@@ -10,6 +10,7 @@
 prog
 expirements
 experiments
+variant
 
 # CMake / Make 构建目录
 build/

@@ -8,10 +8,10 @@
 
 | 项目 | 内容 |
 |------|------|
-| 当前章节 | 第 3 章 §3.8 |
-| 已完成天数 | Day 1 - Day 26 |
+| 当前章节 | 第 3 章 §3.9 |
+| 已完成天数 | Day 1 - Day 27 |
 | 上次学习 | 2026-05-24 |
-| 下一步 | 第 3 章 §3.9（结构体、对齐和 padding） |
+| 下一步 | 第 3 章 §3.10（指针、GDB、缓冲区溢出） |
 
 ---
 
@@ -57,7 +57,7 @@
 | Day 24 | 3.7-3.7.3 | ✅ | [Chapter3/3.7/summary.md](Chapter3/3.7/summary.md) |
 | Day 25 | 3.7.4-3.7.6 | ✅ | [Chapter3/3.7/summary.md](Chapter3/3.7/summary.md) |
 | Day 26 | 3.8-3.8.5 | ✅ | [Chapter3/3.8/summary.md](Chapter3/3.8/summary.md) |
-| Day 27 | 3.9-3.9.3 | ⬜ | — |
+| Day 27 | 3.9-3.9.3 | ✅ | [Chapter3/3.9/summary.md](Chapter3/3.9/summary.md) |
 | Day 28 | 3.10-3.10.3 | ⬜ | — |
 | Day 29 | 3.10.4-3.11.1 | ⬜ | — |
 | Day 30 | 3.11.2-3.12 | ⬜ | — |

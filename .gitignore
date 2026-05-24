@@ -11,6 +11,12 @@ prog
 expirements
 experiments
 variant
+crash
+dl
+
+# coredump
+core
+core.*
 
 # CMake / Make 构建目录
 build/

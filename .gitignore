@@ -8,6 +8,8 @@
 
 # 无扩展名可执行文件（gcc/g++ 默认输出）
 prog
+expirements
+experiments
 
 # CMake / Make 构建目录
 build/

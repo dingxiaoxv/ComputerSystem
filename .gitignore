@@ -8,6 +8,8 @@
 
 # 无扩展名可执行文件（gcc/g++ 默认输出）
 prog
+prog_static
+intr
 expirements
 experiments
 variant

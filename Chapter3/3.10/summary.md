@@ -283,6 +283,76 @@ x/20i $pc-40   # 看 PC 前后的指令上下文（崩溃现场很常用）
 
 ---
 
+## 崩溃信号速查
+
+**🎯 为什么要专门讲信号**
+
+GDB 里看 core 第一句话往往是 `Program terminated with signal SIGXXX`，这个信号名直接缩小了崩因范围。背下下面这张表，比逐条 `bt` 更快定位方向。
+
+**🎯 常见崩溃信号一览**
+
+| 信号 | 编号 | 默认动作 | 触发条件 | 典型 C 场景 |
+|------|------|---------|---------|------------|
+| `SIGSEGV` | 11 | core | MMU 翻译失败：访问未映射页 / 权限不符（写只读、执行 NX 页） | 空指针、野指针、栈溢出递归爆栈、写字符串字面量 |
+| `SIGBUS` | 7 | core | 地址能翻译但访问非法：未对齐访问（部分架构）、`mmap` 区域越过文件末尾、truncate 后访问 | `mmap` 文件被截短后读、SPARC/ARM 严格对齐场景 |
+| `SIGABRT` | 6 | core | 进程自己调 `abort()`；libc/运行时主动放弃 | `assert` 失败、`__stack_chk_fail`、glibc 检测到堆破坏、`std::terminate` |
+| `SIGFPE` | 8 | core | 算术异常（名字误导，不只是浮点） | **整数除零**、`INT_MIN / -1` 溢出；浮点默认不抛，需 `feenableexcept` |
+| `SIGILL` | 4 | core | CPU 取到非法/特权/未实现指令 | 函数指针被踩坏跳到数据区、二进制用了当前 CPU 不支持的扩展指令（如 AVX-512） |
+| `SIGTRAP` | 5 | core | 触发陷阱：断点（`int3`）、`__builtin_trap()`、ubsan 触发 | 调试器场景；`-fsanitize=undefined -fno-sanitize-recover` 命中 UB |
+| `SIGPIPE` | 13 | term | 向已关闭读端的管道/socket 写入 | 对端断开后继续 `write`；网络服务常忽略此信号改用 `EPIPE` |
+| `SIGKILL` | 9 | term | 外部强杀，不可捕获、不可忽略 | OOM killer、`kill -9`、容器 OOM；**不产生 core** |
+| `SIGTERM` | 15 | term | 礼貌请求退出，可被捕获 | `systemctl stop`、K8s preStop；不是崩溃 |
+| `SIGXCPU` | 24 | core | 超过 `RLIMIT_CPU` 软限制 | cgroup/ulimit 限定 CPU 时间的批处理作业 |
+| `SIGXFSZ` | 25 | core | 写文件超过 `RLIMIT_FSIZE` | 日志失控、`dd` 越过 fs 配额 |
+
+**🎯 SIGSEGV 的 `si_code` 细分**
+
+core 里 `siginfo` 的 `si_code` 比信号本身更精确，GDB 里 `p $_siginfo.si_code` 可看：
+
+| `si_code` | 含义 | 常见根因 |
+|-----------|------|---------|
+| `SEGV_MAPERR` (1) | 地址未映射 | 空指针、野指针、栈溢出（爆出栈页之外） |
+| `SEGV_ACCERR` (2) | 地址已映射但权限不符 | 写 `.rodata`、向 NX 段跳转、写 `mprotect` 设为只读的页 |
+| `SEGV_BNDERR` (3) | MPX 边界越界（已废弃） | — |
+| `SEGV_PKUERR` (4) | Protection Key 拒绝 | 用了 `pkey_mprotect` 隔离的进程 |
+
+**🔧 GDB 里看信号的标准动作**
+
+```
+(gdb) bt                            # 先看调用链
+(gdb) p $_siginfo                   # 完整 siginfo_t
+(gdb) p $_siginfo.si_signo          # 信号编号
+(gdb) p $_siginfo.si_code           # 细分原因
+(gdb) p $_siginfo._sifields._sigfault.si_addr   # 触发故障的地址（SIGSEGV/SIGBUS 关键）
+(gdb) info reg rip                  # 崩溃指令地址
+(gdb) x/i $rip                      # 崩在哪条指令
+(gdb) info proc mappings            # si_addr 是否落在已映射区
+```
+
+**🎯 从信号反推根因的速判**
+
+- `SIGSEGV` + `si_addr = 0x0` 或很小 → 空指针解引用
+- `SIGSEGV` + `si_addr` 接近 `$rsp` → 栈溢出（递归爆栈或巨型局部数组）
+- `SIGSEGV` + `si_addr = 0x4141414141414141` 之类 ASCII → 缓冲区溢出覆盖了指针/返回地址
+- `SIGSEGV` + `si_code = SEGV_ACCERR` + 写操作 → 写只读段（字符串字面量、`const` 数据）
+- `SIGABRT` + 栈顶 `__stack_chk_fail` → 栈金丝雀被破坏，缓冲区溢出
+- `SIGABRT` + 栈顶 `__GI___libc_message` / `malloc_printerr` → glibc 检测到堆破坏（double free、unlink corruption）
+- `SIGABRT` + 栈顶 `__assert_fail` → 业务 assert
+- `SIGFPE` + 崩在 `idiv` / `div` 指令 → 整数除零或 `INT_MIN / -1`
+- `SIGBUS` + 业务在做 `mmap` 文件读 → 文件被并发 truncate
+- `SIGILL` + 崩在数据区地址 → 函数指针被破坏跳飞；崩在代码段且首字节是 `c4`/`62` 等 → VEX/EVEX 编码，CPU 不支持
+- 进程突然消失、**没有 core** → 多半 `SIGKILL`（OOM killer、容器 OOM），看 `dmesg | grep -i oom` 或 `journalctl -k`
+
+**⚠️ 几个反直觉点**
+
+- `SIGFPE` 不是"浮点崩溃"专属，整数除零才是它最常见的来源；IEEE 754 浮点默认产生 NaN/Inf 而非信号
+- `SIGSEGV` 不一定是空指针——写只读段、栈溢出、跳到 NX 页都报同一个信号，靠 `si_code` 区分
+- `SIGKILL` 和 `SIGSTOP` 不能被捕获，**也不会留 core**；查不到 core 不等于程序没崩，要看父进程退出状态 `WTERMSIG`
+- `SIGPIPE` 默认终止进程但**不产生 core**，长跑服务必须 `signal(SIGPIPE, SIG_IGN)` 或用 `MSG_NOSIGNAL` / `SO_NOSIGPIPE`
+- 多线程程序里任何线程触发 SIGSEGV，整个进程都会被终止（信号是进程级语义）
+
+---
+
 ## 内存的越界引用与缓冲区溢出
 
 **🎯 为什么栈上数组溢出最危险**

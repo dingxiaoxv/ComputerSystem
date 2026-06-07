@@ -15,6 +15,11 @@ variant
 crash
 dl
 
+# §8.3-8.4 实验二进制（与目录同名，用精确路径忽略避免误伤目录）
+Chapter8/8.3-8.4/fork/fork
+Chapter8/8.3-8.4/wait/wait
+Chapter8/8.3-8.4/shell/tsh
+
 # coredump
 core
 core.*

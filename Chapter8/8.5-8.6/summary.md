@@ -1,11 +1,19 @@
-# §8.5 信号
+# §8.5–8.6 信号与非局部跳转
 
-这一节的主线是：**信号是内核提供的一种"软件中断"，用来通知进程发生了某个事件。难点不在于会用，而在于它天生异步、会并发打断主程序、且不排队——围绕这三个特性衍生出一整套安全规则和同步技巧。**
+这两节讲的是异常控制流在**用户层**的两种机制：**信号**让内核把系统事件通知到进程（一种"软件中断"），**非局部跳转**让程序绕过正常的调用-返回链直接跳回外层。前者难在异步、会并发打断主程序、且不排队；后者难在栈帧失效与 `volatile`。
 
-- 信号的生命周期：发送（写 pending 位）→ 阻塞（blocked 位决定是否暂缓）→ 接收（内核强制进程响应）
+信号（§8.5）：
+
+- 生命周期：发送（写 pending 位）→ 阻塞（blocked 位决定是否暂缓）→ 接收（内核强制进程响应）
 - 信号不排队：同一种信号待处理时最多记一个，多来的会丢
 - 处理程序异步打断主流程，只能调用异步信号安全函数，必须保存 errno、用 volatile 标志
 - 后台子进程回收、竞态规避、显式等待，是信号在真实程序里最常见的三个落点（对应本目录 `handler/`、`sync/`、`waitsig/`、`shell/`）
+
+非局部跳转（§8.6）：
+
+- `setjmp` 把当前调用环境（寄存器、栈指针、PC）拍照存进 `jmp_buf`，`longjmp` 用快照恢复现场，让 `setjmp` "第二次返回"
+- 一次 `longjmp` 能跨越任意多层栈帧，是 C 版的 `try/throw/catch`
+- 危险源于栈帧：跳回的目标函数必须还"活着"，局部变量要 `volatile`
 
 ---
 
@@ -248,7 +256,149 @@ sigprocmask(SIG_SETMASK, &saved, NULL);   /* 恢复原掩码 */
 
 ---
 
+## setjmp 与 longjmp 的基本机制
+
+**🎯 两个函数的分工**
+
+```c
+#include <setjmp.h>
+int  setjmp(jmp_buf env);              /* 保存调用环境到 env */
+void longjmp(jmp_buf env, int retval); /* 恢复 env，让对应的 setjmp 返回 retval */
+```
+
+- `setjmp` 把当前**调用环境**（栈指针、各保存寄存器、程序计数器）打包存进 `env`，**直接返回 0**
+- `longjmp` 从 `env` 里恢复这套环境，效果是让那个 `setjmp` 调用**再返回一次**，这次返回 `retval`（若传 0 会被强制改成 1）
+
+**🎯 一个 setjmp，两种返回**
+
+这是理解非局部跳转的关键——同一行 `setjmp` 会"返回"两次，靠返回值区分是哪一次：
+
+```c
+jmp_buf env;
+
+int main() {
+    if (setjmp(env) == 0) {        /* 第一次：直接调用，返回 0 */
+        printf("正常路径，开始干活\n");
+        work();                    /* work 内部某处会 longjmp(env, 1) */
+    } else {                       /* 第二次：被 longjmp 拽回来，返回非 0 */
+        printf("从深层跳回来了\n");
+    }
+    return 0;
+}
+
+void work() {
+    deep();                        /* 多层嵌套调用 */
+}
+void deep() {
+    longjmp(env, 1);               /* 一步跳回 main 里的 setjmp，跳过 work 的返回 */
+}
+```
+
+**🎯 longjmp 跨越多层栈帧**
+
+`deep` 里的 `longjmp` 不会逐层 `return`，而是**直接把栈指针拨回 `setjmp` 时的位置**，`work`、`deep` 的栈帧瞬间作废。这正是它"非局部"的含义——跳出了正常的函数调用链。
+
+---
+
+## 非局部跳转的典型用途：深层错误的集中处理
+
+**🔧 把多层嵌套里的错误一次性甩回顶层**
+
+C 没有异常机制。要从深层调用里报告错误，传统做法是层层检查返回值、层层向上 `return`，繁琐且容易漏。`setjmp`/`longjmp` 让深层代码直接跳回顶层的统一错误处理点：
+
+```c
+jmp_buf env;
+
+int main() {
+    int rc = setjmp(env);
+    if (rc == 0) {
+        parse_config();            /* 深处任何一步出错都能直接跳回这里 */
+        printf("配置加载成功\n");
+    } else {
+        printf("配置加载失败，错误码 %d\n", rc);  /* 集中处理 */
+    }
+}
+
+void parse_token() {
+    if (/* 出错 */) longjmp(env, ERR_BAD_TOKEN);  /* 跳过中间所有层 */
+}
+```
+
+这本质上就是 `try { ... } catch (rc) { ... }` 的 C 版实现。`retval` 携带的就是"异常类型"。
+
+---
+
+## sigsetjmp 与 siglongjmp：信号处理程序里的非局部跳转
+
+**⚠️ 普通 longjmp 不保存信号掩码**
+
+如果想从**信号处理程序**里跳回主程序（比如收到 `SIGINT` 后放弃当前操作、回到主循环），必须用专门的 `sigsetjmp`/`siglongjmp`。原因是：进入 handler 时内核会阻塞当前信号，普通 `longjmp` 不恢复信号掩码，跳回去后该信号就一直被阻塞了。
+
+```c
+#include <setjmp.h>
+int  sigsetjmp(sigjmp_buf env, int savesigs);  /* savesigs 非 0 时连信号掩码一起保存 */
+void siglongjmp(sigjmp_buf env, int retval);
+```
+
+**🔧 用它实现"软重启"——Ctrl-C 不退出，而是回到主循环**
+
+```c
+sigjmp_buf buf;
+
+void handler(int sig) {
+    siglongjmp(buf, 1);            /* 从 handler 一步跳回主循环 */
+}
+
+int main() {
+    signal(SIGINT, handler);
+    if (sigsetjmp(buf, 1) != 0)    /* savesigs=1：同时保存/恢复信号掩码 */
+        printf("重新开始\n");
+    while (1) {
+        /* 主循环：Ctrl-C 会被 handler 接住并跳回 sigsetjmp，而不是杀死进程 */
+    }
+}
+```
+
+很多交互式程序（如 shell、REPL）的"Ctrl-C 中断当前命令但不退出"就是这么实现的。
+
+---
+
+## 非局部跳转的危险与限制
+
+**⚠️ 跳回的目标函数必须还在栈上**
+
+`longjmp` 只能跳到一个**尚未返回**的函数里的 `setjmp`。如果包含 `setjmp` 的函数已经返回，它的栈帧早被回收，再 `longjmp` 过去就是访问失效内存——未定义行为。
+
+```c
+jmp_buf env;
+void setup() { setjmp(env); }      /* 危险：setup 一返回，env 就失效了 */
+int main() {
+    setup();
+    longjmp(env, 1);               /* UB：跳进一个已经销毁的栈帧 */
+}
+```
+
+**⚠️ 局部变量要加 volatile**
+
+`longjmp` 恢复的是 `setjmp` 时刻的寄存器快照。`setjmp` 之后被修改、且被编译器分配在寄存器里的局部变量，其修改在 `longjmp` 回来后可能"丢失"（恢复成旧值）。需要在跨越 `setjmp`/`longjmp` 后还能保留新值的局部变量，必须声明为 `volatile`：
+
+```c
+int main() {
+    volatile int count = 0;        /* 不加 volatile，longjmp 回来后 count 可能被还原 */
+    if (setjmp(env) != 0) count++;
+    ...
+}
+```
+
+**⚠️ handler 里只能用 siglongjmp**
+
+从信号处理程序逃逸用 `siglongjmp`，普通 `longjmp` 会丢失信号掩码导致后续该信号被永久阻塞。
+
+---
+
 ## 易错点
+
+信号（§8.5）：
 
 - 信号 pending 是位向量不是计数器，待处理期间多来的同种信号会丢，所以回收子进程必须 `while + WNOHANG` 一次收干净
 - `SIGKILL`(9) 和 `SIGSTOP` 无法被捕获、忽略或阻塞，写 handler 拦不住它们
@@ -259,6 +409,15 @@ sigprocmask(SIG_SETMASK, &saved, NULL);   /* 恢复原掩码 */
 - 前台作业被 SIGCHLD handler 回收后，再裸 `waitpid` 会撞 `ECHILD`，要改用 `sigsuspend` 显式等待
 - 子进程 fork 后若不恢复信号掩码，会把"阻塞 SIGCHLD"的状态泄漏给 `execve` 出的新程序
 
+非局部跳转（§8.6）：
+
+- `setjmp` 一行会"返回"两次：直接调用返回 0，被 `longjmp` 触发返回非 0，靠返回值区分两条路径
+- `longjmp(env, 0)` 的 0 会被强制改成 1，因为 `setjmp` 用返回 0 表示"第一次直接返回"
+- `longjmp` 只能跳进**尚未返回**的函数，跳进已销毁的栈帧是未定义行为
+- 跨 `setjmp`/`longjmp` 还要保留新值的局部变量必须加 `volatile`，否则可能被恢复成旧值
+- 从信号处理程序跳回主程序必须用 `sigsetjmp`/`siglongjmp`（且 `savesigs` 传非 0），普通 `longjmp` 会丢信号掩码
+- `setjmp` 的返回值只能用于简单判断，不能存进变量再做复杂运算（标准对其使用上下文有限制）
+
 ---
 
 ## 工程关联
@@ -268,6 +427,10 @@ sigprocmask(SIG_SETMASK, &saved, NULL);   /* 恢复原掩码 */
 - `kill -l` 列出系统所有信号编号；`/proc/<pid>/status` 里的 `SigPnd`/`SigBlk`/`SigCgt` 字段就是 pending/blocked/caught 位向量的十六进制快照
 - 网络服务里 `accept`/`read` 被信号打断返回 `EINTR` 是经典坑，要么用 `SA_RESTART`，要么循环重试
 - 优雅退出（收到 `SIGTERM` 时先清理再退出）、配置热重载（`SIGHUP`）都是 handler + volatile 标志的典型应用
+- C++ 异常（`throw`/`catch`）、Go 的 `panic`/`recover` 在底层都是同一类"非局部控制转移"思想的高级封装，理解了 `setjmp`/`longjmp` 就理解了异常的本质：拨回栈指针、跳过中间栈帧
+- 协程 / 用户态线程的早期实现（如 `ucontext`、某些 setjmp-based coroutine 库）就靠保存/恢复调用环境来切换执行流
+- 交互式程序（shell、Python REPL、数据库客户端）的"Ctrl-C 中断当前操作回到提示符而不退出"普遍用 `sigsetjmp`/`siglongjmp` 实现
+- 调试时若看到栈回溯突然"断层"、跳过了若干本应存在的帧，往往就是发生过 `longjmp`
 
 ---
 
@@ -345,181 +508,7 @@ quit
 - 在后台 `sleep 0.3` 结束、前台 `sleep 5` 还在跑时，用 `ps -o pid,stat,comm --ppid <shell_pid>` 查子进程
 - 确认旧版后台作业变成 `Z`（defunct），新版被 handler 回收、无僵尸
 
-# §8.6 非局部跳转
-
-这一节的主线是：**`setjmp`/`longjmp` 提供了一种绕过正常调用-返回机制的控制转移——可以直接从深层嵌套的函数一步跳回外层某个早先标记的位置。它是 C 实现"异常处理"和"从信号处理程序逃逸"的底层手段，但用错了就是踩内存雷。**
-
-- `setjmp` 把当前的调用环境（寄存器、栈指针、PC）拍照存进 `jmp_buf`
-- `longjmp` 用这张快照恢复现场，让 `setjmp` "第二次返回"
-- 一次 `longjmp` 能跨越任意多层栈帧，是 C 版的 `try/throw/catch`
-- 危险源于栈帧：跳回的目标函数必须还"活着"，局部变量要 `volatile`
-
----
-
-## setjmp 与 longjmp 的基本机制
-
-**🎯 两个函数的分工**
-
-```c
-#include <setjmp.h>
-int  setjmp(jmp_buf env);              /* 保存调用环境到 env */
-void longjmp(jmp_buf env, int retval); /* 恢复 env，让对应的 setjmp 返回 retval */
-```
-
-- `setjmp` 把当前**调用环境**（栈指针、各保存寄存器、程序计数器）打包存进 `env`，**直接返回 0**
-- `longjmp` 从 `env` 里恢复这套环境，效果是让那个 `setjmp` 调用**再返回一次**，这次返回 `retval`（若传 0 会被强制改成 1）
-
-**🎯 一个 setjmp，两种返回**
-
-这是理解非局部跳转的关键——同一行 `setjmp` 会"返回"两次，靠返回值区分是哪一次：
-
-```c
-jmp_buf env;
-
-int main() {
-    if (setjmp(env) == 0) {        /* 第一次：直接调用，返回 0 */
-        printf("正常路径，开始干活\n");
-        work();                    /* work 内部某处会 longjmp(env, 1) */
-    } else {                       /* 第二次：被 longjmp 拽回来，返回非 0 */
-        printf("从深层跳回来了\n");
-    }
-    return 0;
-}
-
-void work() {
-    deep();                        /* 多层嵌套调用 */
-}
-void deep() {
-    longjmp(env, 1);               /* 一步跳回 main 里的 setjmp，跳过 work 的返回 */
-}
-```
-
-**🎯 longjmp 跨越多层栈帧**
-
-`deep` 里的 `longjmp` 不会逐层 `return`，而是**直接把栈指针拨回 `setjmp` 时的位置**，`work`、`deep` 的栈帧瞬间作废。这正是它"非局部"的含义——跳出了正常的函数调用链。
-
----
-
-## 典型用途：深层错误的集中处理
-
-**🔧 把多层嵌套里的错误一次性甩回顶层**
-
-C 没有异常机制。要从深层调用里报告错误，传统做法是层层检查返回值、层层向上 `return`，繁琐且容易漏。`setjmp`/`longjmp` 让深层代码直接跳回顶层的统一错误处理点：
-
-```c
-jmp_buf env;
-
-int main() {
-    int rc = setjmp(env);
-    if (rc == 0) {
-        parse_config();            /* 深处任何一步出错都能直接跳回这里 */
-        printf("配置加载成功\n");
-    } else {
-        printf("配置加载失败，错误码 %d\n", rc);  /* 集中处理 */
-    }
-}
-
-void parse_token() {
-    if (/* 出错 */) longjmp(env, ERR_BAD_TOKEN);  /* 跳过中间所有层 */
-}
-```
-
-这本质上就是 `try { ... } catch (rc) { ... }` 的 C 版实现。`retval` 携带的就是"异常类型"。
-
----
-
-## sigsetjmp 与 siglongjmp：信号处理程序里的非局部跳转
-
-**⚠️ 普通 longjmp 不保存信号掩码**
-
-如果想从**信号处理程序**里跳回主程序（比如收到 `SIGINT` 后放弃当前操作、回到主循环），必须用专门的 `sigsetjmp`/`siglongjmp`。原因是：进入 handler 时内核会阻塞当前信号，普通 `longjmp` 不恢复信号掩码，跳回去后该信号就一直被阻塞了。
-
-```c
-#include <setjmp.h>
-int  sigsetjmp(sigjmp_buf env, int savesigs);  /* savesigs 非 0 时连信号掩码一起保存 */
-void siglongjmp(sigjmp_buf env, int retval);
-```
-
-**🔧 用它实现"软重启"——Ctrl-C 不退出，而是回到主循环**
-
-```c
-sigjmp_buf buf;
-
-void handler(int sig) {
-    siglongjmp(buf, 1);            /* 从 handler 一步跳回主循环 */
-}
-
-int main() {
-    signal(SIGINT, handler);
-    if (sigsetjmp(buf, 1) != 0)    /* savesigs=1：同时保存/恢复信号掩码 */
-        printf("重新开始\n");
-    while (1) {
-        /* 主循环：Ctrl-C 会被 handler 接住并跳回 sigsetjmp，而不是杀死进程 */
-    }
-}
-```
-
-很多交互式程序（如 shell、REPL）的"Ctrl-C 中断当前命令但不退出"就是这么实现的。
-
----
-
-## 危险与限制
-
-**⚠️ 跳回的目标函数必须还在栈上**
-
-`longjmp` 只能跳到一个**尚未返回**的函数里的 `setjmp`。如果包含 `setjmp` 的函数已经返回，它的栈帧早被回收，再 `longjmp` 过去就是访问失效内存——未定义行为。
-
-```c
-jmp_buf env;
-void setup() { setjmp(env); }      /* 危险：setup 一返回，env 就失效了 */
-int main() {
-    setup();
-    longjmp(env, 1);               /* UB：跳进一个已经销毁的栈帧 */
-}
-```
-
-**⚠️ 局部变量要加 volatile**
-
-`longjmp` 恢复的是 `setjmp` 时刻的寄存器快照。`setjmp` 之后被修改、且被编译器分配在寄存器里的局部变量，其修改在 `longjmp` 回来后可能"丢失"（恢复成旧值）。需要在跨越 `setjmp`/`longjmp` 后还能保留新值的局部变量，必须声明为 `volatile`：
-
-```c
-int main() {
-    volatile int count = 0;        /* 不加 volatile，longjmp 回来后 count 可能被还原 */
-    if (setjmp(env) != 0) count++;
-    ...
-}
-```
-
-**⚠️ handler 里只能用 siglongjmp**
-
-从信号处理程序逃逸用 `siglongjmp`，普通 `longjmp` 会丢失信号掩码导致后续该信号被永久阻塞。
-
----
-
-## 易错点
-
-- `setjmp` 一行会"返回"两次：直接调用返回 0，被 `longjmp` 触发返回非 0，靠返回值区分两条路径
-- `longjmp(env, 0)` 的 0 会被强制改成 1，因为 `setjmp` 用返回 0 表示"第一次直接返回"
-- `longjmp` 只能跳进**尚未返回**的函数，跳进已销毁的栈帧是未定义行为
-- 跨 `setjmp`/`longjmp` 还要保留新值的局部变量必须加 `volatile`，否则可能被恢复成旧值
-- 从信号处理程序跳回主程序必须用 `sigsetjmp`/`siglongjmp`（且 `savesigs` 传非 0），普通 `longjmp` 会丢信号掩码
-- `setjmp` 的返回值只能用于简单判断，不能存进变量再做复杂运算（标准对其使用上下文有限制）
-
----
-
-## 工程关联
-
-- C++ 异常（`throw`/`catch`）、Go 的 `panic`/`recover` 在底层都是同一类"非局部控制转移"思想的高级封装，理解了 `setjmp`/`longjmp` 就理解了异常的本质：拨回栈指针、跳过中间栈帧
-- 协程 / 用户态线程的早期实现（如 `ucontext`、某些 setjmp-based coroutine 库）就靠保存/恢复调用环境来切换执行流
-- 交互式程序（shell、Python REPL、数据库客户端）的"Ctrl-C 中断当前操作回到提示符而不退出"普遍用 `sigsetjmp`/`siglongjmp` 实现
-- 一些 C 库（如 `setjmp`-based 的 JSON/正则解析器）用 `longjmp` 做快速错误退出，避免在每层手动检查返回码
-- 调试时若看到栈回溯突然"断层"、跳过了若干本应存在的帧，往往就是发生过 `longjmp`
-
----
-
-## 实验题
-
-**🧪 题 1：观察 setjmp 的两次返回**
+**🧪 题 6：观察 setjmp 的两次返回**
 
 ```c
 #include <setjmp.h>
@@ -549,7 +538,7 @@ int main() {
 - 确认 `longjmp` 后面那行 printf 从不执行
 - 把 `longjmp(env, 42)` 改成 `longjmp(env, 0)`，观察第二次返回值变成 1，解释原因
 
-**🧪 题 2：验证 volatile 的必要性**
+**🧪 题 7：验证 volatile 的必要性**
 
 ```c
 #include <setjmp.h>
@@ -573,7 +562,7 @@ int main() {
 - 给 `count` 加 `volatile`，确认两种优化级别下结果一致
 - 用 `gcc -O2 -S` 看汇编，解释为什么不加 `volatile` 时 `count` 的修改会"丢失"
 
-**🧪 题 3：用 siglongjmp 实现 Ctrl-C 软重启**
+**🧪 题 8：用 siglongjmp 实现 Ctrl-C 软重启**
 
 ```c
 #include <setjmp.h>

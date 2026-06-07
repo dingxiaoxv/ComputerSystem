@@ -8,10 +8,10 @@
 
 | 项目 | 内容 |
 |------|------|
-| 当前章节 | 第 8 章 异常控制流（进行中，§8.1-8.4 已完成） |
-| 已完成天数 | Day 1 - Day 28（第 1-3 章主线）、Day 31 - Day 34（第 7 章）、Day 35 - Day 38（§8.1-8.4） |
-| 上次学习 | 2026-06-06 |
-| 下一步 | 第 8 章 §8.5 信号机制（Day 39）；第 3 章 §3.10.4-3.11 栈保护/浮点汇编待回补 |
+| 当前章节 | 第 8 章 异常控制流（进行中，§8.1-8.6 已完成） |
+| 已完成天数 | Day 1 - Day 28（第 1-3 章主线）、Day 31 - Day 34（第 7 章）、Day 35 - Day 41（§8.1-8.6） |
+| 上次学习 | 2026-06-07 |
+| 下一步 | 第 8 章 §8.7-8.8 进程工具与小结（较短，可并入第 9 章前快扫）；第 3 章 §3.10.4-3.11 栈保护/浮点汇编待回补 |
 
 ---
 
@@ -81,9 +81,10 @@
 | Day 36 | 8.2-8.2.5 | ✅ | [Chapter8/8.2/summary.md](Chapter8/8.2/summary.md) |
 | Day 37 | 8.3-8.4.3 | ✅ | [Chapter8/8.3-8.4/summary.md](Chapter8/8.3-8.4/summary.md) |
 | Day 38 | 8.4.4-8.4.6 | ✅ | [Chapter8/8.3-8.4/summary.md](Chapter8/8.3-8.4/summary.md) |
-| Day 39 | 8.5-8.5.3 | ⬜ | — |
-| Day 40 | 8.5.4-8.5.7 | ⬜ | — |
-| Day 41 | 8.6-8.8 | ⬜ | — |
+| Day 39 | 8.5-8.5.3 | ✅ | [Chapter8/8.5-8.6/summary.md](Chapter8/8.5-8.6/summary.md) |
+| Day 40 | 8.5.4-8.5.7 | ✅ | [Chapter8/8.5-8.6/summary.md](Chapter8/8.5-8.6/summary.md) |
+| Day 41 | 8.6 | ✅ | [Chapter8/8.5-8.6/summary.md](Chapter8/8.5-8.6/summary.md) |
+| — | 8.7-8.8 | ⬜ | 进程工具与小结，待回补 |
 
 ### 第 9 章：虚拟内存 ⬜
 
@@ -132,6 +133,8 @@
 | 日期 | 章节 | 实验文件 | 实验内容 | 关键结论 |
 |------|------|----------|----------|----------|
 | 2026-03-30 | §2.4 | [Chapter2/2.4/exp_precision.cpp](Chapter2/2.4/exp_precision.cpp) | 用 `memcpy` 提取 double 位模式，对比 `0.3` 与 `0.1+0.2` 的 IEEE 754 布局 | 两者 frac 差 1 ULP，根源是两条路径的舍入累积方向不同 |
+| 2026-06-07 | §8.5 | [Chapter8/8.5-8.6/sync/procmask.c](Chapter8/8.5-8.6/sync/procmask.c) | fork 前阻塞 SIGCHLD vs 不阻塞，观察 addjob/deletejob 竞态 | 不同步时 deletejob 会删到尚未 addjob 的作业；父进程保护 addjob 的 sigprocmask 若误把 oldset 传成 prev 会覆盖原掩码导致 SIGCHLD 永久阻塞、死循环 |
+| 2026-06-07 | §8.5 | [Chapter8/8.5-8.6/shell/main.c](Chapter8/8.5-8.6/shell/main.c) | 用 `ps -o stat --ppid` 对比 §8.4 旧版与 §8.5 优化版 shell 的后台作业 | 旧版后台作业结束后变 `Z`（defunct 僵尸）；新版 SIGCHLD handler 用 `waitpid(WNOHANG)` 循环回收，无僵尸 |
 
 ---
 
@@ -166,3 +169,5 @@
 | 2026-05-31 | §8.1：异常是为响应处理器状态变化而做的控制流突变，按同步/异步分为中断/陷阱/故障/终止四类 | 「返回到当前指令」是故障专属（要重试），陷阱和中断都返回下一条；中断是异步的、和当前指令无关 | 系统调用是陷阱、缺页是故障、SIGSEGV 源于不可修复的缺页故障；`strace` 看陷阱、`perf stat` 看 minor/major fault |
 | 2026-05-31 | §8.2：进程提供两个核心假象——独立逻辑控制流（独占 CPU）+ 私有地址空间（独占内存），靠上下文切换和虚拟内存实现 | 并发 ≠ 并行（单核时间片轮转也算并发）；进程进内核态的唯一入口是异常，不能自己提权 | `/proc/<pid>/maps` 看私有地址空间布局；`perf stat -e context-switches` 测切换开销；`time` 的 user/sys 区分用户态/内核态时间 |
 | 2026-06-06 | §8.3-8.4：进程控制四件套 fork（一调两返）/exit/waitpid（回收）/execve（一调不返），fork+execve 是「运行新程序」的标准模型 | fork 后父子是独立副本且执行顺序不确定；execve 后的代码只在失败时执行；僵尸是「已终止未回收」占 PID 而非内存 | 简易 shell 的 fork+exec+reap 就是 bash 跑命令的原理；`strace -f` 看 clone/execve/wait4；cd 必须内置因 fork 出去改不了父 shell 状态 |
+| 2026-06-07 | §8.5：信号是内核的「软件中断」，靠 pending/blocked 两个位向量驱动生命周期；handler 异步打断主流程，配套 sigprocmask 同步、sigsuspend 显式等待 | 信号不排队（pending 不计数），多个同种信号会合并，回收子进程必须 `while + WNOHANG` 一次收干净；handler 里只能用 `sio_*` 不能用 printf；全局标志要 `volatile sig_atomic_t` | shell/守护进程靠 SIGCHLD handler 回收后台子进程，不回收就堆积僵尸；`strace` 看 rt_sigaction/rt_sigprocmask/wait4；`/proc/<pid>/status` 的 SigPnd/SigBlk 就是位向量快照 |
+| 2026-06-07 | §8.6：setjmp/longjmp 是绕过正常调用-返回的非局部跳转，一步跳过多层栈帧；setjmp 一行返回两次（直接返回 0、被 longjmp 拽回返回非 0） | longjmp 只能跳进尚未返回的函数（否则跳进失效栈帧 UB）；跨 setjmp 还要保留新值的局部变量须加 volatile；从 handler 逃逸要用 siglongjmp 否则丢信号掩码 | C++ 异常/Go panic 是同源思想的高级封装；交互式程序「Ctrl-C 中断当前操作但不退出」用 sigsetjmp/siglongjmp 实现 |

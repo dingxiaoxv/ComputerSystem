@@ -8,10 +8,10 @@
 
 | 项目 | 内容 |
 |------|------|
-| 当前章节 | 第 8 章 异常控制流（进行中，§8.1-8.6 已完成） |
-| 已完成天数 | Day 1 - Day 28（第 1-3 章主线）、Day 31 - Day 34（第 7 章）、Day 35 - Day 41（§8.1-8.6） |
-| 上次学习 | 2026-06-07 |
-| 下一步 | 第 8 章 §8.7-8.8 进程工具与小结（较短，可并入第 9 章前快扫）；第 3 章 §3.10.4-3.11 栈保护/浮点汇编待回补 |
+| 当前章节 | 第 8 章 异常控制流（进行中，§8.1-8.7 已完成，仅剩 §8.8 小结） |
+| 已完成天数 | Day 1 - Day 28（第 1-3 章主线）、Day 31 - Day 34（第 7 章）、Day 35 - Day 42（§8.1-8.7） |
+| 上次学习 | 2026-06-08 |
+| 下一步 | 第 8 章 §8.8 小结收尾后进第 9 章虚拟内存；第 3 章 §3.10.4-3.11 栈保护/浮点汇编待回补 |
 
 ---
 
@@ -84,7 +84,8 @@
 | Day 39 | 8.5-8.5.3 | ✅ | [Chapter8/8.5-8.6/summary.md](Chapter8/8.5-8.6/summary.md) |
 | Day 40 | 8.5.4-8.5.7 | ✅ | [Chapter8/8.5-8.6/summary.md](Chapter8/8.5-8.6/summary.md) |
 | Day 41 | 8.6 | ✅ | [Chapter8/8.5-8.6/summary.md](Chapter8/8.5-8.6/summary.md) |
-| — | 8.7-8.8 | ⬜ | 进程工具与小结，待回补 |
+| Day 42 | 8.7 | ✅ | [Chapter8/8.7/summary.md](Chapter8/8.7/summary.md) |
+| — | 8.8 | ⬜ | 全章小结，待回补 |
 
 ### 第 9 章：虚拟内存 ⬜
 
@@ -171,3 +172,4 @@
 | 2026-06-06 | §8.3-8.4：进程控制四件套 fork（一调两返）/exit/waitpid（回收）/execve（一调不返），fork+execve 是「运行新程序」的标准模型 | fork 后父子是独立副本且执行顺序不确定；execve 后的代码只在失败时执行；僵尸是「已终止未回收」占 PID 而非内存 | 简易 shell 的 fork+exec+reap 就是 bash 跑命令的原理；`strace -f` 看 clone/execve/wait4；cd 必须内置因 fork 出去改不了父 shell 状态 |
 | 2026-06-07 | §8.5：信号是内核的「软件中断」，靠 pending/blocked 两个位向量驱动生命周期；handler 异步打断主流程，配套 sigprocmask 同步、sigsuspend 显式等待 | 信号不排队（pending 不计数），多个同种信号会合并，回收子进程必须 `while + WNOHANG` 一次收干净；handler 里只能用 `sio_*` 不能用 printf；全局标志要 `volatile sig_atomic_t` | shell/守护进程靠 SIGCHLD handler 回收后台子进程，不回收就堆积僵尸；`strace` 看 rt_sigaction/rt_sigprocmask/wait4；`/proc/<pid>/status` 的 SigPnd/SigBlk 就是位向量快照 |
 | 2026-06-07 | §8.6：setjmp/longjmp 是绕过正常调用-返回的非局部跳转，一步跳过多层栈帧；setjmp 一行返回两次（直接返回 0、被 longjmp 拽回返回非 0） | longjmp 只能跳进尚未返回的函数（否则跳进失效栈帧 UB）；跨 setjmp 还要保留新值的局部变量须加 volatile；从 handler 逃逸要用 siglongjmp 否则丢信号掩码 | C++ 异常/Go panic 是同源思想的高级封装；交互式程序「Ctrl-C 中断当前操作但不退出」用 sigsetjmp/siglongjmp 实现 |
+| 2026-06-08 | §8.7：进程观测工具链——strace 看系统调用、ps 看快照、top 看实时、pmap 看地址空间，背后数据源统一是虚拟文件系统 /proc | /proc/stat、/proc/diskstats 是自启动累计值，必须两次采样做差；load average 不是 CPU 百分比要和核数比；MemAvailable 才是真正可用内存而非 MemFree | 线上排障三板斧 top→ps/status→strace -p；node_exporter/vmstat/iostat 全部读 /proc；容器里 /proc/cpuinfo 可能是宿主机的导致误判资源 |

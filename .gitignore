@@ -20,6 +20,15 @@ Chapter8/8.3-8.4/fork/fork
 Chapter8/8.3-8.4/wait/wait
 Chapter8/8.3-8.4/shell/tsh
 
+# §8.5-8.6 实验二进制
+Chapter8/8.5-8.6/shell/tsh
+
+# §9.1-9.3 实验二进制和测试数据
+Chapter9/9.1-9.3/locality/locality
+Chapter9/9.1-9.3/paging/major
+Chapter9/9.1-9.3/paging/paging
+Chapter9/9.1-9.3/paging/bigfile
+
 # coredump
 core
 core.*

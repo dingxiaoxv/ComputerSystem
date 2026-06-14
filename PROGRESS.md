@@ -8,10 +8,10 @@
 
 | 项目 | 内容 |
 |------|------|
-| 当前章节 | 第 9 章 虚拟内存（进行中，§9.1-9.3 已完成） |
-| 已完成天数 | Day 1 - Day 28（第 1-3 章主线）、Day 31 - Day 34（第 7 章）、Day 35 - Day 42（§8.1-8.7）、第 9 章 §9.1-9.3 |
-| 上次学习 | 2026-06-10 |
-| 下一步 | 第 9 章 §9.4-9.5（VM 作为内存管理和保护工具）；第 8 章 §8.8 小结、第 3 章 §3.10.4-3.11 待回补 |
+| 当前章节 | 第 9 章 虚拟内存（进行中，§9.1-9.5 已完成） |
+| 已完成天数 | Day 1 - Day 28（第 1-3 章主线）、Day 31 - Day 34（第 7 章）、Day 35 - Day 42（§8.1-8.7）、第 9 章 §9.1-9.5 |
+| 上次学习 | 2026-06-14 |
+| 下一步 | 第 9 章 §9.6（地址翻译、TLB、多级页表）；第 8 章 §8.8 小结、第 3 章 §3.10.4-3.11 待回补 |
 
 ---
 
@@ -91,8 +91,8 @@
 
 | Day | 小节 | 状态 | 总结 |
 |-----|------|------|------|
-| Day 42 | 9.1-9.3（含 9.3.3-9.3.6） | ✅ | [Chapter9/9.1-9.3/summary.md](Chapter9/9.1-9.3/summary.md) |
-| Day 43 | 9.4-9.5 | ⬜ | — |
+| Day 42 | 9.1-9.3（含 9.3.3-9.3.6） | ✅ | [Chapter9/9.1-9.5/summary.md](Chapter9/9.1-9.5/summary.md) |
+| Day 43 | 9.4-9.5 | ✅ | [Chapter9/9.1-9.5/summary.md](Chapter9/9.1-9.5/summary.md) |
 | Day 44 | 9.6-9.6.2 | ⬜ | — |
 | Day 45 | 9.6.3-9.7 | ⬜ | — |
 | Day 46 | 9.8-9.8.4 | ⬜ | — |
@@ -136,7 +136,7 @@
 | 2026-03-30 | §2.4 | [Chapter2/2.4/exp_precision.cpp](Chapter2/2.4/exp_precision.cpp) | 用 `memcpy` 提取 double 位模式，对比 `0.3` 与 `0.1+0.2` 的 IEEE 754 布局 | 两者 frac 差 1 ULP，根源是两条路径的舍入累积方向不同 |
 | 2026-06-07 | §8.5 | [Chapter8/8.5-8.6/sync/procmask.c](Chapter8/8.5-8.6/sync/procmask.c) | fork 前阻塞 SIGCHLD vs 不阻塞，观察 addjob/deletejob 竞态 | 不同步时 deletejob 会删到尚未 addjob 的作业；父进程保护 addjob 的 sigprocmask 若误把 oldset 传成 prev 会覆盖原掩码导致 SIGCHLD 永久阻塞、死循环 |
 | 2026-06-07 | §8.5 | [Chapter8/8.5-8.6/shell/main.c](Chapter8/8.5-8.6/shell/main.c) | 用 `ps -o stat --ppid` 对比 §8.4 旧版与 §8.5 优化版 shell 的后台作业 | 旧版后台作业结束后变 `Z`（defunct 僵尸）；新版 SIGCHLD handler 用 `waitpid(WNOHANG)` 循环回收，无僵尸 |
-| 2026-06-11 | §9.1-9.3 | [Chapter9/9.1-9.3/locality/main.c](Chapter9/9.1-9.3/locality/main.c) | perf stat 测时间局部性（pass 全扫 ×10 vs 1MB 分块 ×10），首次解读混合架构 perf 输出 | 未初始化的 256MB .bss 数组实际 RSS 仅 1.5MB（共享零页），原始数据全部失真；写入初始化后 pass 版 LLC-load-misses 是 blocked 版的 12.5 倍（626K vs 50K），但因硬件预取器掩盖，墙钟时间只差 20% |
+| 2026-06-11 | §9.1-9.3 | [Chapter9/9.1-9.5/locality/main.c](Chapter9/9.1-9.5/locality/main.c) | perf stat 测时间局部性（pass 全扫 ×10 vs 1MB 分块 ×10），首次解读混合架构 perf 输出 | 未初始化的 256MB .bss 数组实际 RSS 仅 1.5MB（共享零页），原始数据全部失真；写入初始化后 pass 版 LLC-load-misses 是 blocked 版的 12.5 倍（626K vs 50K），但因硬件预取器掩盖，墙钟时间只差 20% |
 
 ---
 
@@ -175,3 +175,4 @@
 | 2026-06-07 | §8.6：setjmp/longjmp 是绕过正常调用-返回的非局部跳转，一步跳过多层栈帧；setjmp 一行返回两次（直接返回 0、被 longjmp 拽回返回非 0） | longjmp 只能跳进尚未返回的函数（否则跳进失效栈帧 UB）；跨 setjmp 还要保留新值的局部变量须加 volatile；从 handler 逃逸要用 siglongjmp 否则丢信号掩码 | C++ 异常/Go panic 是同源思想的高级封装；交互式程序「Ctrl-C 中断当前操作但不退出」用 sigsetjmp/siglongjmp 实现 |
 | 2026-06-08 | §8.7：进程观测工具链——strace 看系统调用、ps 看快照、top 看实时、pmap 看地址空间，背后数据源统一是虚拟文件系统 /proc | /proc/stat、/proc/diskstats 是自启动累计值，必须两次采样做差；load average 不是 CPU 百分比要和核数比；MemAvailable 才是真正可用内存而非 MemFree | 线上排障三板斧 top→ps/status→strace -p；node_exporter/vmstat/iostat 全部读 /proc；容器里 /proc/cpuinfo 可能是宿主机的导致误判资源 |
 | 2026-06-10 | §9.1-9.3：虚拟内存第一重身份是用 DRAM 缓存磁盘——CPU 发虚拟地址、MMU 查页表翻译，PTE 有效位决定页命中还是缺页，缺页是 demand paging 的正常机制 | 虚拟内存 ≠ 交换区，每次访存都在做地址翻译；malloc 只登记映射不分配物理页，首次触摸才缺页；时间局部性看重用距离不看重复次数 | Linux 页表是 pgd→p4d→pud→pmd→pte 五级基数树，根在 mm_struct->pgd、切换进程就是改写 CR3；/proc/\<pid\>/stat 第 10/12 字段（minflt/majflt）直接观测缺页，分块（blocking）是压缩重用距离的标准工程手法 |
+| 2026-06-14 | §9.4-9.5：虚拟内存的第二、三重身份——每进程独立页表简化链接/加载/共享/分配（§9.4），PTE 权限位让每次访存顺带做访问控制（§9.5） | execve 不读盘只建映射，靠 demand paging 换入；段错误和缺页同入口不同出口（合法→换页，越权→SIGSEGV）；x86-64 没有独立读位，写位是 _PAGE_RW、不可执行是 _PAGE_NX | COW 是「简化共享 + 写保护」的合成；写 .rodata 字符串字面量崩溃就是写保护；JIT 必须 W^X（先写后改可执行）；/proc/maps 的 rwxp、PSS vs RSS 都落在这两节机制上 |

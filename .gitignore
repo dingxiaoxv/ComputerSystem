@@ -23,11 +23,11 @@ Chapter8/8.3-8.4/shell/tsh
 # §8.5-8.6 实验二进制
 Chapter8/8.5-8.6/shell/tsh
 
-# §9.1-9.3 实验二进制和测试数据
-Chapter9/9.1-9.3/locality/locality
-Chapter9/9.1-9.3/paging/major
-Chapter9/9.1-9.3/paging/paging
-Chapter9/9.1-9.3/paging/bigfile
+# §9.1-9.5 实验二进制和测试数据
+Chapter9/9.1-9.5/locality/locality
+Chapter9/9.1-9.5/paging/major
+Chapter9/9.1-9.5/paging/paging
+Chapter9/9.1-9.5/paging/bigfile
 
 # coredump
 core

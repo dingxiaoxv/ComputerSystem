@@ -221,6 +221,51 @@ void eval(char *cmdline) {
 
 ---
 
+## shell 一条命令的内存视角：三本账本的复制与替换
+
+把 fork + execve 落到内核数据结构上，shell 的全部行为（重定向、管道、为什么 `cd` 必须内置）都能从一条规则推出来。关键是 `task_struct` 下挂着**三本账本**，fork 和 execve 对它们的处理**不对称**：
+
+🎯 **三本账本**（详见 §9.8 虚拟内存视角）
+- `mm_struct`：地址空间（代码/数据/堆/栈，即 vma 区域链表 + 页表）。
+- `files_struct`：打开文件描述符表（fd 0/1/2 指向哪里）。
+- `fs_struct`：当前工作目录、根目录。
+
+🎯 **fork 复制三本，execve 只换 mm 一本**
+- **fork**：三本全复制——`mm_struct` 走 COW（几乎零成本），`files_struct`、`fs_struct` 也各得一份副本。子进程是 shell 的完整克隆。
+- **execve**：旧 `mm_struct` 整本销毁、换上目标程序的新账本；但 **`files_struct`、`fs_struct` 原样保留**（除 close-on-exec 的 fd），PID 不变。
+
+🔧 **一条命令 `ls -l > out.txt` 的内核时间线**
+正因为 fork 之后、execve 之前子进程还在跑 shell 代码，重定向才有插足的窗口：
+
+```
+shell 父进程（一直存活）
+  │ 读到 "ls -l > out.txt"
+  ├─ fork() ───────────────────────────────────┐
+  │   复制 mm_struct(COW)/files_struct/fs_struct │
+  │                                             ▼
+  │                                  子进程（此刻是 shell 克隆，仍跑 shell 代码）
+  │                                    │ ① 改自己的 files_struct：
+  │                                    │   open("out.txt")→dup2(fd,1)→close(fd)
+  │                                    │   （只动 fd 表，没碰 mm_struct）
+  │                                    │ ② execve("/bin/ls",...)
+  │                                    │   旧 mm_struct 销毁→换上 ls 新账本
+  │                                    │   files_struct 保留→stdout 仍指向 out.txt
+  │                                    ▼
+  │                                  现在是 ls 进程，输出直接进 out.txt
+  ├─ waitpid(子) ── 阻塞等子进程结束并回收
+  ▼ 回到主循环读下一条命令
+```
+
+🔧 **为什么 COW 让「每条命令都 fork」开销极低**
+shell 自身地址空间不小（库、历史、变量）。若 fork 真复制整个地址空间，每跑一条命令都要 deep copy 一遍 shell，然后 execve 立刻全扔——纯浪费。COW 让 fork 只复制账本元数据：子进程在 execve 前只读地跑 shell 代码 → 共享父页、零物理页复制；execve 直接换掉整本 `mm_struct` → shell 自己的页毫发无损。`posix_spawn` 更进一步连账本复制都省掉。
+
+🔧 **用这把钥匙解释三件事**
+- **重定向 `> out.txt`**：在「fork 后、execve 前」这段窗口里 `dup2` 改 `files_struct`，因 execve 不动 fd 表，重定向「穿过」execve 对新程序生效——新程序对此一无所知，只管往 fd 1 写。
+- **管道 `ls | grep x`**：父 shell 先 `pipe()` 建管道 → fork 两个子进程（fd 表都继承管道两端）→ 各自 `dup2` 接管道 → 各自 execve。两程序 `mm_struct` 完全独立，**数据共享靠 `files_struct` 指向同一个管道内核缓冲区，不是地址空间共享**。
+- **`cd` 为何必须内置**：`cd` 改 `fs_struct` 的 cwd。若 fork+execve 一个外部 `/bin/cd`，改动落在**子进程**的 `fs_struct`，子进程 exit 后整套 `task_struct` 连同 `fs_struct` 销毁，父 shell 的 cwd 纹丝不动。所以 `cd`/`export`/`umask` 这类「要改 shell 自己账本」的命令**必须在父进程直接执行，绝不能 fork**。
+
+---
+
 ## 易错点
 
 - `fork` 是「一次调用两次返回」：父进程拿到子进程 PID（正数），子进程拿到 0；判断 `fork()==0` 才知道自己是子进程。

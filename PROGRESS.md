@@ -8,10 +8,10 @@
 
 | 项目 | 内容 |
 |------|------|
-| 当前章节 | 第 9 章 虚拟内存（进行中，§9.1-9.5 已完成） |
+| 当前章节 | 第 9 章 虚拟内存（进行中，§9.1-9.6 已完成） |
 | 已完成天数 | Day 1 - Day 28（第 1-3 章主线）、Day 31 - Day 34（第 7 章）、Day 35 - Day 42（§8.1-8.7）、第 9 章 §9.1-9.5 |
 | 上次学习 | 2026-06-14 |
-| 下一步 | 第 9 章 §9.6（地址翻译、TLB、多级页表）；第 8 章 §8.8 小结、第 3 章 §3.10.4-3.11 待回补 |
+| 下一步 | 第 9 章 §9.7（Intel Core i7/Linux 地址翻译案例、mmap）；第 8 章 §8.8 小结、第 3 章 §3.10.4-3.11 待回补 |
 
 ---
 
@@ -93,8 +93,8 @@
 |-----|------|------|------|
 | Day 42 | 9.1-9.3（含 9.3.3-9.3.6） | ✅ | [Chapter9/9.1-9.5/summary.md](Chapter9/9.1-9.5/summary.md) |
 | Day 43 | 9.4-9.5 | ✅ | [Chapter9/9.1-9.5/summary.md](Chapter9/9.1-9.5/summary.md) |
-| Day 44 | 9.6-9.6.2 | ⬜ | — |
-| Day 45 | 9.6.3-9.7 | ⬜ | — |
+| Day 44 | 9.6-9.6.4 | ✅ | [Chapter9/9.6/summary.md](Chapter9/9.6/summary.md) |
+| Day 45 | 9.7 | ⬜ | — |
 | Day 46 | 9.8-9.8.4 | ⬜ | — |
 | Day 47 | 9.9-9.12 | ⬜ | — |
 
@@ -173,6 +173,7 @@
 | 2026-06-06 | §8.3-8.4：进程控制四件套 fork（一调两返）/exit/waitpid（回收）/execve（一调不返），fork+execve 是「运行新程序」的标准模型 | fork 后父子是独立副本且执行顺序不确定；execve 后的代码只在失败时执行；僵尸是「已终止未回收」占 PID 而非内存 | 简易 shell 的 fork+exec+reap 就是 bash 跑命令的原理；`strace -f` 看 clone/execve/wait4；cd 必须内置因 fork 出去改不了父 shell 状态 |
 | 2026-06-07 | §8.5：信号是内核的「软件中断」，靠 pending/blocked 两个位向量驱动生命周期；handler 异步打断主流程，配套 sigprocmask 同步、sigsuspend 显式等待 | 信号不排队（pending 不计数），多个同种信号会合并，回收子进程必须 `while + WNOHANG` 一次收干净；handler 里只能用 `sio_*` 不能用 printf；全局标志要 `volatile sig_atomic_t` | shell/守护进程靠 SIGCHLD handler 回收后台子进程，不回收就堆积僵尸；`strace` 看 rt_sigaction/rt_sigprocmask/wait4；`/proc/<pid>/status` 的 SigPnd/SigBlk 就是位向量快照 |
 | 2026-06-07 | §8.6：setjmp/longjmp 是绕过正常调用-返回的非局部跳转，一步跳过多层栈帧；setjmp 一行返回两次（直接返回 0、被 longjmp 拽回返回非 0） | longjmp 只能跳进尚未返回的函数（否则跳进失效栈帧 UB）；跨 setjmp 还要保留新值的局部变量须加 volatile；从 handler 逃逸要用 siglongjmp 否则丢信号掩码 | C++ 异常/Go panic 是同源思想的高级封装；交互式程序「Ctrl-C 中断当前操作但不退出」用 sigsetjmp/siglongjmp 实现 |
+| 2026-06-14 | 跨 §8.4↔§9.8 整理：fork/execve 的统一模型——`task_struct` 下挂三本账本（`mm_struct`/`files_struct`/`fs_struct`），fork 复制三本（mm 走 COW）、execve 只换 mm 一本，files/fs 原样保留 | 误以为 execve 也换 fd 表/cwd——正因 execve 保留 `files_struct`/`fs_struct`，重定向才能「穿过」execve 生效；fork 复制 fd 表是管道/重定向能成立的前提 | 重定向（dup2 夹在 fork-execve 间改 fd 表）、管道（共享 `files_struct` 指向同一管道缓冲、非地址空间共享）、cd 必须内置（改 `fs_struct` 否则随子进程销毁）；已交叉补入 §8.3-8.4 与 §9.7-9.8 两份 summary（含账本结构图/缺页流程/COW/克隆账本-换账本图） |
 | 2026-06-08 | §8.7：进程观测工具链——strace 看系统调用、ps 看快照、top 看实时、pmap 看地址空间，背后数据源统一是虚拟文件系统 /proc | /proc/stat、/proc/diskstats 是自启动累计值，必须两次采样做差；load average 不是 CPU 百分比要和核数比；MemAvailable 才是真正可用内存而非 MemFree | 线上排障三板斧 top→ps/status→strace -p；node_exporter/vmstat/iostat 全部读 /proc；容器里 /proc/cpuinfo 可能是宿主机的导致误判资源 |
 | 2026-06-10 | §9.1-9.3：虚拟内存第一重身份是用 DRAM 缓存磁盘——CPU 发虚拟地址、MMU 查页表翻译，PTE 有效位决定页命中还是缺页，缺页是 demand paging 的正常机制 | 虚拟内存 ≠ 交换区，每次访存都在做地址翻译；malloc 只登记映射不分配物理页，首次触摸才缺页；时间局部性看重用距离不看重复次数 | Linux 页表是 pgd→p4d→pud→pmd→pte 五级基数树，根在 mm_struct->pgd、切换进程就是改写 CR3；/proc/\<pid\>/stat 第 10/12 字段（minflt/majflt）直接观测缺页，分块（blocking）是压缩重用距离的标准工程手法 |
 | 2026-06-14 | §9.4-9.5：虚拟内存的第二、三重身份——每进程独立页表简化链接/加载/共享/分配（§9.4），PTE 权限位让每次访存顺带做访问控制（§9.5） | execve 不读盘只建映射，靠 demand paging 换入；段错误和缺页同入口不同出口（合法→换页，越权→SIGSEGV）；x86-64 没有独立读位，写位是 _PAGE_RW、不可执行是 _PAGE_NX | COW 是「简化共享 + 写保护」的合成；写 .rodata 字符串字面量崩溃就是写保护；JIT 必须 W^X（先写后改可执行）；/proc/maps 的 rwxp、PSS vs RSS 都落在这两节机制上 |

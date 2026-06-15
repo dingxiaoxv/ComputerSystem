@@ -29,6 +29,9 @@ Chapter9/9.1-9.5/paging/major
 Chapter9/9.1-9.5/paging/paging
 Chapter9/9.1-9.5/paging/bigfile
 
+# §9.7-9.8 实验二进制
+Chapter9/9.7-9.8/cow_minflt
+
 # coredump
 core
 core.*

@@ -87,6 +87,117 @@ DRAM 比 SRAM 慢约 10 倍，但磁盘比 DRAM 慢约 **100,000 倍**。这个�
 
 ---
 
+## 页缓存（page cache）：§9.3「DRAM 缓存磁盘」在文件上的工程落地
+
+上一节的「DRAM 缓存磁盘」是 CSAPP 给的**抽象**——把整个虚拟内存看成一个缓存，每个虚拟页 cached / uncached。Linux 把这个抽象**拆成两条腿**落地：**文件页走 page cache，匿名页走 swap**。page cache 就是其中你每天 `free` 都能看见、也是日常排查最常打交道的那条。这一节专门把它讲透——它是把书上的"caching 工具"对应到真实 Linux 现象的关键缺环。
+
+**🎯 page cache 是什么**
+
+内核用**当前空闲的物理内存**缓存**文件内容**的那部分。任何对普通文件的 `read` / `write` / `mmap`，数据都不在磁盘和用户 buffer 间直达，而是先进 page cache：内核以 `(文件的 address_space, 页内偏移)` 为 key，给文件的每一页在内存里留一份副本，**全机器同一文件同一页只存一份**。这正是上一节三态表里「已缓存 / 未缓存」落到**文件页**上的实现：
+
+- 页在 page cache 里 = cached → 访问是**页命中**，纳秒级、不碰盘
+- 页不在 = uncached → 访问触发 **major fault**，从磁盘读入这页、放进 page cache 再返回
+
+**🎯 一张表：书本抽象 → Linux 的两条腿**
+
+| §9.3 抽象 | 文件页（file-backed） | 匿名页（anonymous：堆 / 栈） |
+|-----------|---------------------|---------------------------|
+| 后备存储 | 磁盘上的原文件 | 无（靠 swap 分区 / 文件） |
+| "缓存"叫什么 | **page cache**（`free` 的 buff/cache） | 就是常规物理页，无专名 |
+| cached → uncached 的回收 | 干净页直接丢、脏页先回写**原文件** | 换出：必须先写到 **swap** |
+| 没有后备存储时 | 总有原文件可回写，永远能回收 | 无 swap 则匿名脏页不可驱逐 → OOM |
+
+一句话记牢：**page cache 只装文件页**。你 `malloc` 的堆、函数栈这些匿名页**不在 page cache 里**，它们对应的"缓存层"是 swap（呼应「脏页」节文件页 vs 匿名页的写回去向）。
+
+**🔧 它代表什么——要掌握的三件事**
+
+- **文件 I/O 的性能底座**：命中 page cache 就零磁盘 I/O。"程序冷启动慢、第二次秒开"就是第二次代码 / 数据文件页已在 page cache（实验题 3 用 `drop_caches` 前后 majflt 的天差地别亲手验证这一点）
+- **`buff/cache` 高是好事，不是内存要满**：page cache 干净页随时可回收，所以判断"还能用多少内存"看 `MemAvailable`（把可回收 cache 算进去）而非 `MemFree`。看到 `free` 里一大半是 buff/cache 不要慌，那是 Linux 在拿空闲内存当缓存
+- **脏页是 page cache 里还没回写的子集**：写文件先把对应缓存页标脏、异步落盘（细节见「脏页」节）；page cache 同时是"多进程读写同一文件互相立即可见"的会合点——大家命中的是同一份缓存页
+
+**🔧 怎么查（系统 / 文件 / 进程三个粒度）**
+
+```bash
+# ① 系统级：buff/cache 就是页缓存总量
+free -h
+grep -E '^(Cached|Buffers|Dirty|Mapped|Active\(file\)|Inactive\(file\)):' /proc/meminfo
+#   Cached=文件页缓存主体  Buffers=块设备元数据缓存  Mapped=被 mmap 进某进程地址空间的文件页
+#   Active(file)/Inactive(file)=page cache 的冷/热两条 LRU 链   Dirty=其中尚未回写的部分
+
+# ② 文件级：某个文件有多少页已在缓存里
+fincore bigfile            # util-linux 自带，列出该文件 RES/PAGES 缓存量
+vmtouch -v bigfile         # 逐页标 0/1 + 缓存百分比（需另装）；程序内精确查用 mincore(2)
+
+# ③ 进程级：smaps 里带文件路径的映射区，Rss 即该进程命中的缓存文件页
+grep -A4 '\.so' /proc/<pid>/smaps | grep -E 'Rss|Referenced'
+
+# ④ 清空验证：丢掉 page cache，再访问命中就变 major fault
+sync && echo 1 | sudo tee /proc/sys/vm/drop_caches   # 1=页缓存 2=dentry/inode 3=全部
+```
+
+**⚠️ page cache（DRAM 缓存磁盘）vs §6 的 CPU cache（SRAM 缓存 DRAM），别混成一个**
+
+两者都叫 cache，但层级、管理者、粒度、寻址全不同，是**串联的两级**：
+
+| | page cache | CPU cache（L1/L2/L3，§6） |
+|--|-----------|--------------------------|
+| 缓存谁 | 磁盘文件 → DRAM | DRAM → SRAM |
+| 谁管理 | 内核软件 | 硬件 |
+| 粒度 | 4 KB 页 | 64 B 行 |
+| 寻址 | `(inode, 页偏移)` | 物理地址 |
+
+一次 `m[i]`（mmap 文件）的访问可能：page cache 命中（数据在 DRAM）但 L3 miss（还没进 SRAM），也可能两级都命中。它们各自独立统计，排查时别用一个解释另一个。
+
+---
+
+## 匿名页与 swap：§9.3 抽象的另一条腿
+
+上一节说 page cache 管**文件页**。那没有文件的内存——堆、栈、BSS、私有匿名 mmap——谁给它们当"磁盘"？答案是 **swap**。这是把 §9.3「DRAM 缓存磁盘」补全到匿名页的另一半，和 page cache 一文一武凑成完整图景。
+
+**🎯 匿名页（anonymous page）是什么**
+
+不对应任何文件的物理页。典型来源：
+
+- `malloc` / `brk` 的堆、函数调用栈、`.bss`（只读未写的 `.bss` 先共享内核零页，**写后**才变独立匿名页）
+- `mmap(MAP_ANONYMOUS)` 私有匿名映射
+- `fork` 写时复制后被写过、复制出来的私有副本（COW 后的页）
+
+"匿名"的含义就是**没有原文件可回写**：文件脏页能写回原文件、干净文件页能直接丢，匿名页这两条路都不通——它在内存里是**唯一副本**。所以要回收一个匿名页，只剩一条路：**先写到 swap，再释放物理页**。
+
+**🎯 swap 是什么、解决什么**
+
+swap 是磁盘上专门给匿名页当后备存储的区域（独立分区，或一个 swap 文件）。有了它，匿名页也能像文件页一样换出 / 换入：
+
+- **换出（swap out，`so`）**：内存紧张时，内核挑冷的匿名页写进 swap，腾出物理页
+- **换入（swap in，`si`）**：进程再访问这页 → 触发 **major fault** → 从 swap 读回内存
+
+于是 §9.3 的三态在匿名页上也成立：在内存 = cached（页命中）、被换出到 swap = uncached（再访问 major fault）。**一句话：swap 就是匿名页的"磁盘"，page cache 的后备是原文件、swap 是匿名页的后备。**
+
+**🎯 内核在"丢文件页 vs 换匿名页"之间怎么选：`vm.swappiness`**
+
+内存回收时两类页都是候选，`vm.swappiness`（默认 60，范围 0–100，新内核可到 200）是倾向旋钮：值越高越倾向**换出匿名页**（留住文件 cache），越低越倾向**丢文件页**（留住匿名页）。设 0 不是禁用 swap，只是"尽量先丢文件页、实在不行才动匿名页"；真要禁用得 `swapoff`。延迟敏感服务常调低。
+
+**⚠️ 三个关键易错点**
+
+- **无 swap = 匿名脏页无处可去**：机器没配 swap（或被 cgroup 限死）时，匿名页根本不能驱逐，内存一紧张就只能触发 **OOM killer** 杀进程——这正是很多容器"内存一满直接被 kill、没有先变慢的缓冲"的原因
+- **判断 swap 压力看速率 `si`/`so`，不是 SwapUsed**：swap 里躺着些冷页很正常、无害；真正致命的是 **swap thrashing**——`vmstat` 的 `si`/`so` 持续高位，说明热页被反复换出又换入，每次都 major fault，和文件页抖动一样让系统瘫在 I/O 上。只看 `SwapFree` 变少会误判
+- **swap ≠ 虚拟内存**：swap 只是 VM「作为缓存」这一面**针对匿名页**的实现，不是虚拟内存的全部（呼应本章第一条易错点）
+
+**🔧 怎么查**
+
+```bash
+free -h                                       # Swap 行：total/used/free
+swapon --show                                 # 有哪些 swap 设备/文件、类型、用量、优先级
+grep -E 'VmSwap' /proc/<pid>/status           # 单进程被换出了多少
+grep -E '^(Swap|SwapPss):' /proc/<pid>/smaps  # 按映射区看换出量（SwapPss 是按共享均摊版）
+vmstat 1                                       # si/so 两列——swap 抖动的关键指标，远比 SwapUsed 重要
+cat /proc/sys/vm/swappiness                    # 换匿名页的倾向
+```
+
+补充：`SwapCached`（`/proc/meminfo`）= 换出过、又被读回内存但 swap 里副本仍保留的页，类似"文件干净页"——再次换出可免写直接丢。云主机常用 **zram / zswap**：拿一块压缩内存当 swap，换出走内存压缩而非真磁盘，缓解抖动。
+
+---
+
 ## 页表、页命中与缺页
 
 **🎯 页表：VP → PP 的映射表**
@@ -597,6 +708,8 @@ perf stat -e page-faults,minor-faults,major-faults ./a.out
 - `malloc` 成功只是登记了虚拟页映射，物理页要等第一次触摸时缺页才分配，所以 malloc 大块内存秒回且 RSS 不涨
 - minor fault 不碰磁盘（修 PTE 即可），major fault 才要等磁盘 I/O，看缺页统计必须区分这两列
 - DRAM 缓存是全相联 + 写回 + 大页块，所有设计都由"miss 代价是 ms 级"这一点逆推出来，不要拿 SRAM 缓存的直觉套
+- page cache（页缓存）是 §9.3「DRAM 缓存磁盘」抽象**只在文件页这条线上**的落地，匿名堆栈页不在其中（走 swap）；`free` 里 buff/cache 占一大半不代表内存紧张——干净页可回收，判断可用内存看 `MemAvailable` 而非 `MemFree`
+- page cache 和 §6 的 CPU cache（L1/L2/L3）是串联两级、别混：前者是内核软件管理、4 KB 页、缓存磁盘文件；后者是硬件、64 B 行、缓存 DRAM。mmap 文件命中 page cache 不等于命中 L3
 - 时间局部性看的是重用距离（两次重访之间隔了多少不同数据）而不是重复次数，访问集合相同、顺序不同，局部性可以天差地别
 - 脏页的"脏"是相对后备存储而言（内存副本比磁盘新），不是相对其他进程；匿名脏页只能写回 swap，无 swap 时不可驱逐，内存紧张只能 OOM
 - 脏页回写的主力是后台 flusher 线程的周期（5 s 醒）+ 过期（30 s）+ 阈值（dirty_ratio）机制，驱逐时写回只是兜底；别以为"不缺页就不刷盘"——文件脏页最多躺 30 s 必落盘
@@ -625,6 +738,7 @@ perf stat -e page-faults,minor-faults,major-faults ./a.out
 - 只读字符串字面量崩在 `char *s="x"; s[0]='y';` 上，就是写 `.rodata` 触发 §9.5 写保护；改成 `char s[]="x"` 放栈上才可写，这是 C 新手最经典的段错误来源
 - JIT / 动态代码生成必须 `mmap(PROT_READ|PROT_WRITE)` 写入机器码后再 `mprotect(PROT_READ|PROT_EXEC)`，因为 W^X（可写与可执行互斥）策略下 `_PAGE_NX` 不允许同时可写可执行——理解这点才能调通 JIT 引擎的内存权限
 - 容器/进程内存统计要用 PSS（`/proc/<pid>/smaps` 的 Pss 行）而非 RSS，正是因为 §9.4 的共享页让多个进程的 RSS 重复计了同一批物理页
+- page cache 是文件 I/O 的统一缓冲层，`read`/`write`/`mmap` 都过它："重启后第一次跑慢、之后快"就是它在预热；`fincore`/`vmtouch` 查某文件缓存命中率，`O_DIRECT` 绕过它（数据库自管缓冲、避免双重缓存），`posix_fadvise(...DONTNEED)` 主动驱逐不再用的文件页、`READAHEAD` 提示预读——调这些的前提是先认清"page cache 命中与否"才是顺序大文件 I/O 快慢的主因
 
 ## 实验题
 

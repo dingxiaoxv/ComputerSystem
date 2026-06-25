@@ -128,8 +128,9 @@ grep -E '^(Cached|Buffers|Dirty|Mapped|Active\(file\)|Inactive\(file\)):' /proc/
 fincore bigfile            # util-linux 自带，列出该文件 RES/PAGES 缓存量
 vmtouch -v bigfile         # 逐页标 0/1 + 缓存百分比（需另装）；程序内精确查用 mincore(2)
 
-# ③ 进程级：smaps 里带文件路径的映射区，Rss 即该进程命中的缓存文件页
-grep -A4 '\.so' /proc/<pid>/smaps | grep -E 'Rss|Referenced'
+# ③ 进程级：smaps_rollup 一行汇总整个进程（比逐 mapping 累加直观，详见下方专节）
+cat /proc/<pid>/smaps_rollup
+grep -A4 '\.so' /proc/<pid>/smaps | grep -E 'Rss|Referenced'   # 想定位是哪个映射贡献的再翻 smaps
 
 # ④ 清空验证：丢掉 page cache，再访问命中就变 major fault
 sync && echo 1 | sudo tee /proc/sys/vm/drop_caches   # 1=页缓存 2=dentry/inode 3=全部
@@ -225,6 +226,245 @@ zramctl                          # 看 zram 设备的算法、原始数据量 vs
 grep -r . /sys/kernel/debug/zswap/   # zswap 的 stored_pages / pool_total_size / reject_* 统计
 cat /sys/module/zswap/parameters/{enabled,compressor,max_pool_percent}
 ```
+
+---
+
+## 读懂 /proc/meminfo：一台真机的系统内存全景
+
+前面 ① 只 grep 了几行，完整 `/proc/meminfo` 是判断「系统内存到底紧不紧」的总账。拿一台 2 GB 小机器的真实输出来读（只挑关键行）：
+
+```
+MemTotal:        2013932 kB   总物理内存 ≈ 1.92 GB
+MemFree:         1621708 kB   完全没被碰过的内存
+MemAvailable:    1825204 kB ★ 估算「还能给新程序用多少」——含可回收的 cache/slab
+Buffers:            1336 kB   块设备元数据缓存
+Cached:           203884 kB ★ page cache 主体（文件页缓存，含 tmpfs/Shmem）
+SwapTotal/SwapFree:    0 kB ★ 这台机器没配 swap
+Dirty:               112 kB   page cache 里已改未回写（极少 → 回写压力几乎没有）
+AnonPages:        105900 kB ★ 匿名页总量（堆/栈，无文件后备）
+Mapped:            62104 kB   被 mmap 进地址空间的文件页（含 .so 代码段，是 Cached 子集）
+Active(file):      39528 kB   ┐ 文件页冷热 LRU：两者相加 ≈ Cached
+Inactive(file):   165616 kB   ┘ 九成在 Inactive=冷，随时可回收
+Active(anon):        192 kB   ┐ 匿名页冷热 LRU：相加 ≈ AnonPages
+Inactive(anon):   105760 kB   ┘
+Slab:              53132 kB   内核 slab 分配器总量
+SReclaimable:      23360 kB    └ 其中可回收（dentry/inode 缓存，算进 MemAvailable）
+SUnreclaim:        29772 kB    └ 其中不可回收
+PageTables:         2596 kB   页表自身占的内存
+Committed_AS:     787952 kB   所有进程「承诺」过的虚拟内存总量
+CommitLimit:     1006964 kB   overcommit 上限（承诺没超 → 安全）
+```
+
+**🎯 看内存够不够用 MemAvailable，不是 MemFree**
+
+`MemFree` 1.62 GB 看着空，但它不含「可回收的缓存」。真正能给新进程用的是 `MemAvailable` 1.78 GB ≈ `MemFree + 可回收 page cache(Cached) + 可回收 slab(SReclaimable) − 各 zone 保留水位`。本例 `MemAvailable − MemFree ≈ 203 MB`，正好对应那一大坨随时能丢的 `Cached`。所以 **buff/cache 高不是吃满，是 Linux 拿空闲内存做文件缓存**（呼应「页缓存」节）。
+
+**🎯 文件页 vs 匿名页，在 meminfo 里各有两条 LRU**
+
+- 文件页：`Active(file) + Inactive(file) = 39528 + 165616 ≈ Cached`，且九成在 Inactive(冷) → 读过一批文件、近期没再碰，可立即回收
+- 匿名页：`Active(anon) + Inactive(anon) = 192 + 105760 ≈ AnonPages(105900)`，对应「匿名页与 swap」节
+- 一个直觉：`Mapped(62 MB)` 是 `Cached` 里被某进程映射进地址空间的子集（代码段 + mmap 文件），剩下没被映射的 Cached 是纯读写缓存
+
+**⚠️ SwapTotal=0 是个隐患**
+
+这台机器**没配 swap**，可那 105 MB `AnonPages` 没有文件后备、又无 swap 可去——它们**不可驱逐**。现在内存很空所以无事，可一旦内存吃紧，内核没法换出匿名页，只能直接触发 OOM killer（精确对应「匿名页与 swap」节的「无 swap = 匿名脏页无处可去」）。容器 / 嵌入式常是这种配置，要心里有数。
+
+**🎯 别忽略内核自己的开销**
+
+`Slab(53 MB) + PageTables(2.6 MB) + KernelStack(3.6 MB)` 是内核为管理内存付的「管理费」，不属于任何用户进程。排查「用户进程内存加起来对不上总量」时这部分要算进去。
+
+---
+
+## smaps_rollup：一眼看清单个进程的内存构成（进程级首选）
+
+逐个 mapping 翻 `/proc/<pid>/smaps` 要手动累加，`/proc/<pid>/smaps_rollup` 把进程**所有映射区汇总成一份**，是进程级内存排查的首选。拿一份真实输出来读（一个常驻进程）：
+
+```
+Rss:               23276 kB   物理内存驻留总量（共享库算全份）
+Pss:               15185 kB   按比例均摊后的「公平账」
+Pss_Anon:           6868 kB     └ 其中匿名页
+Pss_File:           8317 kB     └ 其中文件页
+Shared_Clean:       9488 kB   多进程共享的干净页（典型是 .so / 可执行文件代码段）
+Shared_Dirty:          0 kB   多进程共享的脏页
+Private_Clean:      6920 kB   本进程独占的干净页（私有文件映射、未写的 COW 页）
+Private_Dirty:      6868 kB   本进程独占的脏页（写过的堆 / 栈匿名页）
+Anonymous:          6868 kB   匿名页总量（无文件后备）
+Swap / SwapPss:        0 kB   被换出到 swap 的量（0 = 没换出）
+Referenced:        23276 kB   最近被访问过的页（≈Rss 说明几乎全是热页）
+```
+
+**🎯 三个口径，对应三个问题**
+
+- **Rss = 四类页之和**：`Shared_Clean + Shared_Dirty + Private_Clean + Private_Dirty = 9488+0+6920+6868 = 23276`。它把共享库**算全份**，N 个进程各自的 Rss 相加会把同一份 .so 重复计 N 次，最虚高。
+- **Pss = 公平账**：共享页除以共享它的进程数再计入。`Pss = Pss_Anon + Pss_File = 6868+8317 = 15185`。**所有进程 Pss 相加 ≈ 物理内存真实占用**，不重复计共享库。本例 `Rss − Pss = 8091 kB` 就是被均摊掉的共享部分，几乎全来自 9488 kB 的 .so 代码段（反推约 7 个进程在共享同一批库）。
+- **USS = 独占、退出即还**：`Private_Clean + Private_Dirty = 6920+6868 = 13788 kB`。这是「杀掉这个进程能立刻回收多少」——其中 `Private_Dirty` 是写过的匿名堆栈（无 swap 时只能等进程退出释放），`Private_Clean` 是私有文件页（可直接丢、需要再从文件重读）。
+
+**🎯 把字段对回「文件页 / 匿名页」两节**
+
+- **文件页** = `Rss − Anonymous = 23276 − 6868 = 16408 kB`（= 共享 .so 9488 + 私有文件页 6920），这部分就是该进程命中的 **page cache**
+- **匿名页** = `Anonymous = 6868 kB`，全部落在 `Private_Dirty`（堆 / 栈写过 → 私有脏页），后备是 **swap**；这里 `Swap=0` 说明一页都没被换出
+- 本例 `Pss_File(8317) > Pss_Anon(6868)`：内存大头是映射的代码和库，堆栈数据才 6.8 MB——典型「代码多、数据少」的常驻进程画像
+
+⚠️ 想看「谁吃内存、杀掉能回收多少」看 **USS / Pss**，别只看 Rss（共享库被重复计、虚高）；想定位是哪个文件映射贡献的，再回 `/proc/<pid>/smaps` 翻带路径的映射区。
+
+---
+
+## 排查：内存高，是文件读写还是堆申请？
+
+把内存拆成「文件页 vs 匿名页」两类，正好对应「文件读写 vs 堆申请」。排查就是在系统级、进程级各做一次这个拆分。
+
+**⚠️ 先记住一个坑：三种行为占内存的位置不同**
+
+| 行为 | 系统级体现 | 进程级 RSS |
+|------|-----------|-----------|
+| `read`/`write` 文件 | `Cached` 涨（page cache） | **不进任何进程 RSS** |
+| `mmap` 文件 | `Cached` + `Mapped` 涨 | `Pss_File` 涨 |
+| `malloc` 堆 | `AnonPages` 涨 | `Pss_Anon` / `Private_Dirty` 涨 |
+
+最关键：普通 `read`/`write` 的 page cache **不算在任何进程头上**，是系统级、可回收的 `Cached`。所以「文件读写导致内存高」在 `top` / 进程 RSS 里常常看不到，只在 `/proc/meminfo` 的 `Cached` 里——别被骗。只有 `mmap` 文件才进程级可见。
+
+**🔧 第一步：系统级定性（比 Cached 和 AnonPages 谁大）**
+
+```bash
+grep -E '^(MemTotal|MemAvailable|Cached|Buffers|Mapped|Shmem|AnonPages|Active\(anon\)|Inactive\(anon\)|Active\(file\)|Inactive\(file\)|SwapTotal):' /proc/meminfo
+```
+- 文件页总量 ≈ `Cached + Buffers`（≈ `Active(file)+Inactive(file)`）大 → 文件读写 / 缓存占的
+- 匿名页总量 = `AnonPages`（≈ `Active(anon)+Inactive(anon)`）大 → 堆 / 栈申请占的
+- 先用 `MemAvailable` 判断到底紧不紧：充足 + 只是 `Cached` 大 → 多半不是问题（page cache 可回收，可能只是被 `free` 的 used 列骗了）；`AnonPages` 大 + `MemAvailable` 紧张 + 无 swap → 真危险
+
+**🔧 第二步：进程级定位（smaps_rollup 的 Pss_Anon vs Pss_File）**
+
+```bash
+for f in /proc/[0-9]*/smaps_rollup; do
+  pid=${f%/smaps_rollup}; pid=${pid#/proc/}
+  awk -v pid="$pid" -v c="$(tr -d '\0' </proc/$pid/comm 2>/dev/null)" \
+    '/^Pss_Anon:/{a=$2}/^Pss_File:/{fl=$2}END{if(a+fl>0)printf "%8d kB anon  %8d kB file  %6s  %s\n",a,fl,pid,c}' "$f" 2>/dev/null
+done | sort -rn | head
+```
+- `anon` 大 → 堆申请多（malloc）；`file` 大 → mmap 大文件 / 大量 .so / 大代码段
+- 排序里没有哪个进程突出、但系统 `Cached` 高 → 就是普通 read/write 的 page cache，不归任何进程
+
+**🔧 第三步：验证（drop_caches 一招定生死）**
+
+```bash
+free -h; sync && echo 1 | sudo tee /proc/sys/vm/drop_caches; free -h
+```
+- 内存大降 → 文件页缓存，无害可回收；几乎不动、`AnonPages` 不降 → 匿名页（堆），真占用，下一步 `heaptrack` / `valgrind --tool=massif` 看分配点
+
+**🔧 容器场景捷径（cgroup v2 直接给 anon/file 拆分）**
+
+```bash
+grep -E '^(anon|file|shmem|slab|sock) ' /sys/fs/cgroup/memory.stat
+cat /sys/fs/cgroup/memory.current /sys/fs/cgroup/memory.max
+```
+`anon` vs `file` 一目了然；容器 OOM 正是 `memory.current` 撞 `memory.max`，其中 `anon` 无 swap 时不可回收，是真凶。
+
+**⚠️ 两个额外陷阱**
+
+- `Shmem` / tmpfs（`/dev/shm`）算在 `Cached` 里却**没有磁盘后备、drop_caches 回收不掉**，像匿名页一样赖着
+- 用户进程 PSS 加起来对不上总量 → 看 `Slab`（尤其海量小文件 I/O 撑大的 `SReclaimable` dentry/inode 缓存）、`PageTables`、`KernelStack`
+
+---
+
+## iowait 高时，从虚拟内存信息看脏页与回写
+
+`/proc/stat` 的 cpu 行里 `iowait` 高 = CPU 空闲但在等磁盘 I/O 完成。能不能从虚拟内存信息看出「当前有多少脏页、多少正在回写」？能——`meminfo` / `vmstat` 直接给。
+
+**🎯 静态量：/proc/meminfo 两行**
+
+```bash
+grep -E '^(Dirty|Writeback|NFS_Unstable|WritebackTmp):' /proc/meminfo
+```
+- `Dirty`：page cache 里**已改、尚未回写**的量（积压的待刷脏页）
+- `Writeback`：**正在**写回磁盘的量（in-flight，正在路上的）
+- 直觉：`Dirty` 持续高且不降 = 写入速度盖过回写能力；`Writeback` 持续非 0 = flusher / 同步回写正在忙——iowait 多半就来自这里
+
+**🎯 累计 / 速率：/proc/vmstat 更细**
+
+```bash
+grep -E '^(nr_dirty|nr_writeback|nr_dirtied|nr_written|pgpgin|pgpgout|pgmajfault|pswpin|pswpout)' /proc/vmstat
+```
+- `nr_dirty` / `nr_writeback`：当前脏页 / 回写中页数（页为单位，×4KB）
+- `nr_dirtied` / `nr_written`：自启动累计「被弄脏 / 已写回」的页——两者差值的增速反映积压趋势
+- `pgpgin` / `pgpgout`：从块设备读入 / 写出的 KB（累计）；`pgmajfault`：major fault 次数；`pswpin` / `pswpout`：swap 换入换出
+
+**🔧 动态盯：vmstat 1**
+
+```bash
+vmstat 1
+#  bi/bo = 块设备每秒读入 / 写出（KB）   wa = iowait%   b = 阻塞在 I/O 的进程数
+watch -n1 'grep -E "Dirty|Writeback" /proc/meminfo'
+```
+
+**🎯 iowait 高，先分清是「写积压」「读等待」还是「swap 抖动」**
+
+- **写积压**：`Dirty` / `Writeback` 高 + `bo` 高 → 脏页回写风暴。诱因常是写太快撞上 `vm.dirty_ratio`（默认 20%）触发**同步阻塞回写**——写进程被罚去亲自刷盘，iowait 尖峰。这台 2GB 机器 20% ≈ 400MB 脏页就触发（呼应「脏页」节的回写时机）
+- **读等待**：`bi` 高 + `pgmajfault` 涨 → major fault 真读磁盘（冷 page cache、首次 mmap 读文件）
+- **swap 抖动**：`pswpin` / `pswpout`（= vmstat `si` / `so`）高 → 内存不足换页（呼应「匿名页与 swap」节）
+
+**🔧 定位是谁在写**
+
+```bash
+iotop -o                          # 实时看哪个进程在做磁盘 I/O
+pidstat -d 1                      # 每进程读写速率
+cat /proc/<pid>/io                # write_bytes=真正提交到块层的写；wchar=write 系统调用字节(可能只进 page cache)
+```
+`wchar` 大但 `write_bytes` 小 = 写都被 page cache 吸收、还没落盘（脏页在堆积）；`write_bytes` 大 = 真在刷盘。
+
+**🎯 调优旋钮（理解，不轻易改生产）**
+
+`vm.dirty_background_ratio`（默认 10%，超了后台异步刷）、`vm.dirty_ratio`（默认 20%，超了写进程同步阻塞刷）、`vm.dirty_expire_centisecs`（脏页最长寿命，默认 30s）。把比例调小 → 脏页更早更平滑地刷，削峰但总 I/O 量不变；数据库等自己用 `fsync` 控制落盘的场景另当别论。
+
+---
+
+## 回写风暴：定位是哪个进程在弄脏页
+
+确认是回写风暴后，定位的难点在于：**回写由内核 flusher 线程执行**（`kworker/u*:*+flush-<bdi>`，老内核叫 `pdflush` / `flush-x:y`），`iotop` / `top` 里吃写 I/O 的是个 kworker，不是你的应用。所以要找的不是「谁在刷盘」，而是**「谁把页弄脏了」**。
+
+**🔧 第一层：进程级写账（谁的 write_bytes 在涨）**
+
+```bash
+pidstat -d 1                 # kB_wr/s 最高的就是主力写者（按 write_bytes 归因到弄脏页的进程）
+iotop -oPa                   # -o 只看有 I/O 的；DISK WRITE 列同样按 write_bytes 归因
+cat /proc/<pid>/io           # write_bytes=最终落到块层的写；wchar=write() 系统调用字节
+```
+判读：`wchar` 大但 `write_bytes` 小 = 写都进 page cache 还没落盘（正堆积脏页）；`write_bytes` 猛涨 = 它制造的脏页正被刷成回写风暴。若 `iotop` 里只见 `[kworker/...+flush-...]` 占满写带宽，那是确认了「异步回写」，需靠下面两招找弄脏页的人。
+
+**🔧 第二层：抓现行（谁被脏页限流卡住）**
+
+撞上 `vm.dirty_ratio` 时写进程被同步限流，睡在内核 `balance_dirty_pages` 里——这是元凶铁证：
+
+```bash
+ps -eo pid,stat,wchan:32,comm | grep -i 'balance_dirty\|wb_'   # wchan 卡在 balance_dirty_pages 的进程
+cat /proc/<pid>/wchan; echo                                     # 单看某进程卡在哪个内核函数
+cat /proc/pressure/io                                          # PSI：系统 I/O 压力（some/full avg）
+```
+
+**🔧 第三层：cgroup 归因（异步回写也能算账，容器首选）**
+
+cgroup v2 的 cgroup-aware writeback 把 flusher 的异步写**回标到发起 cgroup**，即使内核线程刷盘也能算清哪个 service：
+
+```bash
+grep -E 'file_dirty|file_writeback' /sys/fs/cgroup/<service>/memory.stat   # 每 cgroup 当前脏页 / 回写量
+cat /sys/fs/cgroup/<service>/io.stat                                       # 每 cgroup 实际写各块设备的 wbytes
+```
+
+**🔧 第四层：eBPF 精确到「谁在弄脏 page cache」**
+
+```bash
+cachetop          # bcc-tools：DIRTIES 列 = 谁在弄脏页（最直接）
+biotop            # bcc：每进程块层 I/O（写多挂 flusher，配合用）
+bpftrace -e 'tracepoint:writeback:writeback_dirty_inode { @[comm]=count(); }'
+```
+
+**🔧 闭环确认**
+
+```bash
+lsof -p <pid> | grep REG                                          # 它打开写的文件
+strace -f -e trace=write,pwrite64,fsync,fdatasync,sync -p <pid>   # 写频率与是否频繁 fsync
+```
+
+决策链：**iotop 看到 kworker flush 吃满 → 确认回写 → `pidstat -d` / `cachetop` DIRTIES / cgroup `file_dirty` 找弄脏页的进程 → `wchan=balance_dirty_pages` 验证被限流 → `lsof` / `strace` 看写哪个文件。**
 
 ---
 

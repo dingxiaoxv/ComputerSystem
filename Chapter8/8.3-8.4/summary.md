@@ -266,6 +266,44 @@ shell 自身地址空间不小（库、历史、变量）。若 fork 真复制�
 
 ---
 
+## strace：进程的内核边界听诊器
+
+本节这批系统调用（`fork`/`execve`/`waitpid`/`open`/`read`……）平时藏在库函数和应用逻辑底下看不见，`strace` 就是把它们**逐条显形**的工具。它的本质是**用户态与内核态边界的探针**——只回答「程序卡在/失败在某个 syscall 上吗」，不回答「程序逻辑对不对」。教学 demo 里 `strace ./prog` 看的是一份完整剧本，但真实工程里程序复杂、且往往**不能重启**，用法完全不同。
+
+🎯 **strace 擅长的四类真实问题**——都集中在「用户态↔内核态边界」：
+- **进程卡死/无响应**：看它阻塞在哪个 syscall。卡 `futex`→锁竞争/死锁；卡 `read`/`recvfrom`→等网络或管道对端；卡 `epoll_wait`/`poll`→等的事件没来；卡 `flock`/`fcntl`→文件锁。
+- **「文件/配置找不到」类玄学**：`-e trace=openat,stat` 直接看它**到底去哪个路径找文件**，一眼看出 cwd 不对、环境变量没传、容器路径映射错。性价比最高的用法。
+- **报错吞了 errno**：syscall 返回值自带 `errno`（`ENOENT`/`EACCES`/`ETIMEDOUT`），比应用层包装过的异常精确。
+- **syscall 层的性能放大**：`-c` 统计次数和耗时，揪出「一次请求 open 了 4000 次同一文件」这种问题。
+
+🎯 **核心：不重启，attach 到已运行进程**——这正是「不能直接启动应用」的正解：
+```bash
+strace -p <PID>          # attach 到正在跑的进程，不重启它
+strace -f -p <PID>       # -f 跟踪它 fork/clone 出的所有线程和子进程
+```
+- 多线程服务**必须加 `-f`**：否则只盯主线程，而干活的是 worker 线程，啥也看不到。
+- attach 用 `ptrace` 实现：目标每次**进入和退出 syscall 都要停下来交给 tracer 处理**（每个 syscall 至少停两次），来回切换的开销让目标**显著变慢**——高 QPS 服务上 attach 可能造成延迟尖刺，拿到现场就 Ctrl-C 脱离，别长挂。
+- 权限：需要 root 或 `CAP_SYS_PTRACE`；否则受 `/proc/sys/kernel/yama/ptrace_scope` 限制——很多发行版默认值为 1，非 root 只能 attach 自己的子孙进程。
+
+⚠️ **复杂程序必须过滤，否则被淹没**：真实进程一秒几万条 syscall，全打等于没打。工程里几乎总是带条件用：
+```bash
+strace -f -e trace=openat,stat,access -p <PID>   # 只看文件类（找不到文件/权限）
+strace -f -e trace=%network        -p <PID>      # 类别过滤：%network/%file/%process/%signal
+strace -f -c                       -p <PID>      # 统计模式：不打明细，只出 syscall 汇总表
+strace -f -tt -T -y -s 4096 -o t.log -p <PID>    # 黄金组合，落盘别刷屏
+```
+其中 `-tt`（微秒时间戳）+ `-T`（每条 syscall 耗时）+ `-y`（把 fd 翻译成实际文件名/socket）是生产排障的黄金搭配——既知道慢在哪，又知道操作的是哪个对象。`-s 4096` 防止字符串参数被截断。
+
+🔧 **生产环境的现实约束与替代品**：严肃生产环境里 strace 常被慎用甚至禁用，就因为 ptrace 的开销。要知道它的边界：
+- **eBPF 系是现代替代**：`bpftrace`、bcc 工具集（`opensnoop` 看谁开文件、`tcpconnect` 看谁发起连接），基于 eBPF 开销小得多，可生产常驻。趋势上 strace 让位给 eBPF，但 strace 胜在零依赖、随手可用、输出直观。
+- **容器/k8s**：目标在容器内（多半没装 strace），就在**宿主机**上对该进程的宿主 PID 做 `strace -p`，并确保有 `CAP_SYS_PTRACE`。
+
+🎯 **一句话心智模型**：
+> 学习时 `strace ./demo` = 从头看一个进程完整的系统调用剧本；
+> 工程时 `strace -f -e <过滤> -p <PID>` = 给一个正出问题的进程做几秒钟的内核边界听诊，把模糊的应用层故障，定位到某个具体 syscall 的 errno 或阻塞点上。
+
+---
+
 ## 易错点
 
 - `fork` 是「一次调用两次返回」：父进程拿到子进程 PID（正数），子进程拿到 0；判断 `fork()==0` 才知道自己是子进程。
@@ -277,6 +315,8 @@ shell 自身地址空间不小（库、历史、变量）。若 fork 真复制�
 - 回收循环靠 `waitpid` 返回 -1 且 `errno==ECHILD` 结束，别把这个「正常收完」当成错误。
 - `cd` 这类命令必须内置，不能 `fork+execve`——子进程 `chdir` 改的是子进程的工作目录，shell 自己的目录没变。
 - 系统调用返回 -1 才看 `errno`；成功时 `errno` 的值是未定义的，不要去读。
+- `strace` 跟踪多线程/多进程服务**必须加 `-f`**，否则只看主线程，漏掉真正干活的 worker 线程，误判为「没在做事」。
+- `strace -p` 不重启进程，但 ptrace 开销会让目标显著变慢——别在高 QPS 生产服务上长挂，拿到现场就脱离。
 
 ---
 
@@ -345,7 +385,29 @@ int main(void) {
 - 用 `strace -f ./tsh` 跟踪，敲一条 `/bin/ls`，在输出里找到 `clone`/`execve`/`wait4` 三个系统调用，对应 fork→exec→reap 三步。
 - 思考题：在这个 shell 里敲 `cd /tmp` 为什么无效？（提示：`cd` 不是内置命令，被 fork+execve 当外部程序找，而系统里没有 `/bin/cd`）尝试把 `cd` 加为内置命令（调用 `chdir`）。
 
-**🧪 题 5：fork 与 stdout 缓冲的坑**
+**🧪 题 5：用 strace -p attach 定位一个卡住的进程**
+
+写一个会「卡在内核边界」的小程序，后台跑两份让第二份卡住，再用 `strace -p` 亲手定位（贴近真实排障，而非看 demo 剧本）：
+
+```c
+/* block_lock.c：第一份拿到锁后卡在 pause；第二份卡在 flock */
+#include "csapp.h"
+#include <sys/file.h>
+int main(void) {
+    int fd = open("/tmp/lock.tmp", O_CREAT | O_RDWR, 0644);
+    flock(fd, LOCK_EX);          // 锁被占时，后启动的实例阻塞在这一行
+    pause();                     // 抢到锁的实例停在这里等信号
+}
+```
+
+要求：
+- `gcc block_lock.c csapp.c -o bl -lpthread`，`./bl &` 先跑一份占住锁，再 `./bl &` 跑第二份。
+- `strace -p <第二份PID>` attach，确认它**阻塞在 `flock(... LOCK_EX)`** 不动——印证「进程卡死先看卡在哪个 syscall」；对比 `strace -p <第一份PID>` 卡在 `pause`，两者阻塞点不同。
+- 再写个 `block_read.c`（`read(0, buf, 100)` 从 stdin 读但不喂输入），attach 后确认卡在 `read`。
+- 练习过滤与汇总：对任意一个跑着的进程跑 `strace -f -c -p <PID>`，几秒后 Ctrl-C 看 syscall 汇总表；再用 `-e trace=openat -y` 只看它开了哪些文件（`-y` 把 fd 显示成路径）。
+- 思考题：为什么多线程程序漏了 `-f`，attach 后常常「看不到几条 syscall」？（worker 在别的线程，主线程多半正阻塞在 `futex`/`epoll_wait`）
+
+**🧪 题 6：fork 与 stdout 缓冲的坑**
 
 ```c
 #include <stdio.h>

@@ -39,6 +39,20 @@ Chapter9/9.9-9.10/expirements/race
 Chapter9/9.9-9.10/expirements/shm
 Chapter9/9.9-9.10/expirements/race.log
 
+# §5.11 实验二进制
+Chapter5/5.11/expirements/bp_branch
+Chapter5/5.11/expirements/bp_cmov
+Chapter5/5.11/expirements/branch_predict
+Chapter5/5.11/expirements/cmov_vs_branch
+Chapter5/5.11/expirements/reg_spill
+
+# §5.12-5.14 实验二进制和 perf/火焰图产物
+Chapter5/5.12-5.14/expirements/dedup_fg
+Chapter5/5.12-5.14/expirements/flame.svg
+Chapter5/5.12-5.14/expirements/out.folded
+Chapter5/5.12-5.14/expirements/out.perf
+Chapter5/5.12-5.14/expirements/perf.data
+
 # coredump
 core
 core.*

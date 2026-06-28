@@ -105,10 +105,11 @@
 
 | Day | 小节 | 状态 | 总结 |
 |-----|------|------|------|
-| Day 48 | 5.1-5.3 | ⬜ | — |
-| Day 49 | 5.4-5.7.1 | ⬜ | — |
-| Day 50 | 5.7.2-5.10 | ⬜ | — |
-| Day 51 | 5.11-5.15 | ⬜ | — |
+| Day 48 | 5.1-5.3 | ✅ | [5.1-5.3](Chapter5/5.1-5.3/summary.md) |
+| Day 49 | 5.4-5.6 | ✅ | [5.4-5.6](Chapter5/5.4-5.6/summary.md) |
+| Day 50 | 5.7 | ✅ | [5.7](Chapter5/5.7/summary.md) |
+| Day 51 | 5.8-5.10 | ⬜ | — |
+| Day 52 | 5.11-5.15 | ⬜ | — |
 
 ### 第 6 章：存储器层次结构 ⬜
 
@@ -141,6 +142,7 @@
 | 2026-06-07 | §8.5 | [Chapter8/8.5-8.6/shell/main.c](Chapter8/8.5-8.6/shell/main.c) | 用 `ps -o stat --ppid` 对比 §8.4 旧版与 §8.5 优化版 shell 的后台作业 | 旧版后台作业结束后变 `Z`（defunct 僵尸）；新版 SIGCHLD handler 用 `waitpid(WNOHANG)` 循环回收，无僵尸 |
 | 2026-06-11 | §9.1-9.3 | [Chapter9/9.1-9.5/locality/main.c](Chapter9/9.1-9.5/locality/main.c) | perf stat 测时间局部性（pass 全扫 ×10 vs 1MB 分块 ×10），首次解读混合架构 perf 输出 | 未初始化的 256MB .bss 数组实际 RSS 仅 1.5MB（共享零页），原始数据全部失真；写入初始化后 pass 版 LLC-load-misses 是 blocked 版的 12.5 倍（626K vs 50K），但因硬件预取器掩盖，墙钟时间只差 20% |
 | 2026-06-16 | 第 9 章 | [Chapter9/虚拟内存实战——日常开发场景串讲.md](Chapter9/虚拟内存实战——日常开发场景串讲.md) | 以 8 个日常场景（启动/malloc/读写文件/fork/爆栈/段错误/共享内存/TLB）+ 1 个综合排查横向串联全章，每场景配图 + 可编译代码 + 可观测命令；全部代码 gcc -Wall 验证通过 | first touch：malloc 后 RSS 1.1MB、触摸 256MB 后涨到 263MB、free 不降；COW：子进程只读 minflt 增量 0、改写 16384（=64MB/4KB）；段错误 si_code=1(SEGV_MAPERR) 对应缺页第一关；坑：子进程 `_exit` 前 printf 须 `fflush` 否则管道下全缓冲丢输出 |
+| 2026-06-28 | §5.14 | [Chapter5/5.12-5.14/expirements/dedup.c](Chapter5/5.12-5.14/expirements/dedup.c) | profile 引导优化 + Amdahl 验证 + perf 三步法（record/report/annotate）vs gprof 对比。O(n²) 去重→哈希，分段计时 dedup/checksum | Amdahl 预测 7.36× vs 实测 7.30×（误差<1%）：dedup 自身加速 187× 但整体仅 7.3×，因 checksum 优化后占 96.6% 成新瓶颈、卡在 1/(1-α)=7.62× 天花板；**gprof 翻车**——把真热点 strcmp(libc 无符号)的 63% 错归给 `_init`，因 self time 不含被调库函数；perf 采 PC 正确钉到 `__strcmp_avx2` 65%，annotate 落到 `call strcmp@plt`(24%) 指令行 |
 
 ---
 
@@ -186,3 +188,4 @@
 | 2026-06-27 | §6.1：存储层次源于物理鸿沟——SRAM 快贵小（cache）、DRAM 慢便宜大（主存）、闪存/磁盘非易失但更慢，且 CPU-内存速度差距持续拉大，这是整个第 6 章的理由 | 总线带宽/磁盘速率用十进制 10⁶·10⁹，内存容量/cache/页用二进制 2²⁰·2³⁰，两者易混；磁盘平均旋转延迟是半圈不是整圈；SSD 不能原地改写、写前须块级擦除且有寿命 | DRAM 行缓冲区命中是顺序访问快的物理根源；一次磁盘随机访问 ~10ms 抵数十万次访存，是 swap 抖动假死的根源；fio 4K 随机 IOPS、smartctl 擦写寿命、iostat await 都落在本节物理结构上 |
 | 2026-06-27 | §6.4：cache 硬件把地址切成 `[tag\|组索引\|块偏移]` 三段定位，直接映射/组相联/全相联只是「每组放几行 E」的不同取值，写策略=命中(写直达/写回)×不命中(写分配/非写分配)两个正交选择 | 组索引取地址**中间位**不是高位（高位会让顺序访问全挤一组）；冲突不命中在 cache 没满时也发生；写命中策略和写不命中策略是两个正交问题；脏位≠有效位 | 直接映射抖动靠 padding/`alignas` 错开映射解决；写回+写分配让大量小写在 L1 合并、不打满带宽；全相联因要并行比所有行只能做小，TLB 是其现实身影；`perf c2c` 测的 false sharing 就是同一 line 的跨核写回竞争 |
 | 2026-06-27 | §6.6：存储器山把访存性能画成两维曲面——工作集大小决定「站在哪级存储」（纵深台阶 L1→L2→L3→主存），步长决定「用了多少空间局部性」（横向斜坡）；本机(Ultra 7 255H)实测跑出 L1≈85→L2≈48→L3≈33→主存≈20 GB/s 四级断崖，断崖位置精确落在 48K/3M/24M 容量边界 | 山顶平山脚陡——工作集进 L1 时 stride 几乎不影响（没 miss 可摊），只有落到主存空间局部性才救命；stride 伤害到「每 line 只剩 1 个元素」(本机 s8=64B)就到顶、再大压平；矩阵乘 6 版本计算量完全相同、性能差几倍纯来自 miss 率 | 用软件量硬件——纵切面台阶反推各级 cache 容量、和 lscpu 对上；矩阵乘 kij/ikj(B、C 全 stride-1)比 jki/kji 快几倍，是 BLAS 循环重排+分块的最小模型；tiling 把工作集切进 cache = 往山顶爬，对应列存/im2col/分块卷积 |
+| 2026-06-28 | §5.12-5.14：load/store 也是有延迟的功能单元——指针追逐 CPE≈load 延迟(4)、store→load 别名经存储转发 CPE 暴涨；优化分层施力(算法>消妨碍因素>循环展开/多累加器)，先 profile 再优化、Amdahl 定上限 | "store 比 load 快"是错觉(别名时转发链拉到~6cyc)；链表 CPE≈4 是 load 延迟串成关键路径而非 cache 慢；别名是编译器**无法证明不别名**时的悲观假设；gprof 采样估时对短函数失真；优化前必须先知道 α | `restrict` 解开别名悲观假设(BLAS/memcpy)；指针追逐 load-延迟受限是"数组优于链式"的微架构理由；store buffer 是 x86 TSO 重排与多线程内存屏障的根源；perf record+火焰图替代需重编译的 gprof |

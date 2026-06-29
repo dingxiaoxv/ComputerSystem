@@ -100,6 +100,7 @@
 | Day 46 | 9.8-9.8.4 | ✅ | [Chapter9/9.7-9.8/summary.md](Chapter9/9.7-9.8/summary.md) |
 | Day 47 | 9.9-9.10 | ✅ | [Chapter9/9.9-9.10/summary.md](Chapter9/9.9-9.10/summary.md) |
 | Day 47 | 9.11-9.12 | ⬜ | — |
+| 补充 | 9.13 内核虚拟内存说明书（ARM64/6.x，多文件） | ✅ | [9.13-kernel-vm-source](Chapter9/9.13-kernel-vm-source/00-index.md) |
 
 ### 第 5 章：优化程序性能 ⬜
 
@@ -143,6 +144,9 @@
 | 2026-06-11 | §9.1-9.3 | [Chapter9/9.1-9.5/locality/main.c](Chapter9/9.1-9.5/locality/main.c) | perf stat 测时间局部性（pass 全扫 ×10 vs 1MB 分块 ×10），首次解读混合架构 perf 输出 | 未初始化的 256MB .bss 数组实际 RSS 仅 1.5MB（共享零页），原始数据全部失真；写入初始化后 pass 版 LLC-load-misses 是 blocked 版的 12.5 倍（626K vs 50K），但因硬件预取器掩盖，墙钟时间只差 20% |
 | 2026-06-16 | 第 9 章 | [Chapter9/虚拟内存实战——日常开发场景串讲.md](Chapter9/虚拟内存实战——日常开发场景串讲.md) | 以 8 个日常场景（启动/malloc/读写文件/fork/爆栈/段错误/共享内存/TLB）+ 1 个综合排查横向串联全章，每场景配图 + 可编译代码 + 可观测命令；全部代码 gcc -Wall 验证通过 | first touch：malloc 后 RSS 1.1MB、触摸 256MB 后涨到 263MB、free 不降；COW：子进程只读 minflt 增量 0、改写 16384（=64MB/4KB）；段错误 si_code=1(SEGV_MAPERR) 对应缺页第一关；坑：子进程 `_exit` 前 printf 须 `fflush` 否则管道下全缓冲丢输出 |
 | 2026-06-28 | §5.14 | [Chapter5/5.12-5.14/expirements/dedup.c](Chapter5/5.12-5.14/expirements/dedup.c) | profile 引导优化 + Amdahl 验证 + perf 三步法（record/report/annotate）vs gprof 对比。O(n²) 去重→哈希，分段计时 dedup/checksum | Amdahl 预测 7.36× vs 实测 7.30×（误差<1%）：dedup 自身加速 187× 但整体仅 7.3×，因 checksum 优化后占 96.6% 成新瓶颈、卡在 1/(1-α)=7.62× 天花板；**gprof 翻车**——把真热点 strcmp(libc 无符号)的 63% 错归给 `_init`，因 self time 不含被调库函数；perf 采 PC 正确钉到 `__strcmp_avx2` 65%，annotate 落到 `call strcmp@plt`(24%) 指令行 |
+| 2026-06-29 | §9.13 | [Chapter9/9.13-kernel-vm-source/experiments/zero_page.c](Chapter9/9.13-kernel-vm-source/experiments/zero_page.c) | 读未初始化匿名内存（256MB/65536 页）分只读/写两阶段，量化 zero page 别名（statm RSS + stat minflt） | 只读遍历 RSS 仅 +132KB、minflt +65537（每页缺页映射共享 ZERO_PAGE 但不计 RSS）；写一遍后 RSS +256MB、minflt +65536；majflt 全程 0——「零页别名惩罚」根因坐实：`do_anonymous_page` 只读分支让所有虚拟页别名到同一物理零页 |
+| 2026-06-29 | §9.13 | [Chapter9/9.13-kernel-vm-source/experiments/vmstat_fault.c](Chapter9/9.13-kernel-vm-source/experiments/vmstat_fault.c) | minor vs major fault 分离：malloc+memset 制造 minor；fadvise(DONTNEED)+mmap+MADV_RANDOM 制造 major | minor 段 minflt 32774/majflt 0；major 段 majflt 32768（恰好=页数）/minflt 0；**必须 MADV_RANDOM**——否则 readahead+fault-around 把顺序读的 major 几乎全转成 minor（加之前 major 仅 1） |
+| 2026-06-29 | §9.13 | [Chapter9/9.13-kernel-vm-source/experiments/dirty_writeback.c](Chapter9/9.13-kernel-vm-source/experiments/dirty_writeback.c) | 持续写文件不 fsync，观察 /proc/meminfo Dirty/Writeback 水位 + 本轮吞吐曲线，看脏页回写子系统的限流（32GB/NVMe ext4 写 12GB） | 起步 ~6000MB/s（纯 page cache，Dirty 线性涨）→ ~1GB 处吞吐腰斩到 ~3000MB/s（balance_dirty_pages 软节流）→ ~2GB 后 Writeback 转非 0（flusher 介入）、Dirty 稳在 ~2.2-3.1GB 平台；**NVMe 快，全程稳在 background 水位、没撞 limit**，阈值基于可脏内存而非 MemTotal 故平台低于 32GB×10% |
 
 ---
 
@@ -156,7 +160,7 @@
 
 > 学习中遇到的疑问，已解决的标记 ✅，待解决的标记 ❓
 
-- ❓ 零页别名惩罚的完整机理（2026-06-11）：blocked 版本读未初始化数组（所有虚拟页 → 同一物理零页）绑 P-core 后每迭代 ~19 cycles、IPC 0.22，而读真实内存只要 ~2.9 cycles；L1-dcache-load-misses 从 0.26% 涨到 6%（约每条 cache line 一次 miss），疑似"同一物理行被多个虚拟地址交替访问"触发的 L1 别名惩罚，但 4200 万次 L1 miss 不足以解释全部 ~110 亿额外周期。等 Day 48+ 学了 §5.7 处理器模型和 perf record 后回头用 topdown 分析定位
+- 🟡 零页别名惩罚（2026-06-11，机理已解，微架构定量仍留尾）：**别名本质与基准失真根因已坐实**（2026-06-29，§9.13 + `zero_page.c`）——读未初始化匿名内存走 `do_anonymous_page` 的只读分支，所有虚拟页 PTE 指向同一物理 `ZERO_PAGE`，故 RSS 不涨却每页一次 minor fault，benchmark 量到的是别名行为而非真实内存流量（因此基准前必须先写一遍数组）。**尚未解决**：blocked 版每迭代 ~19 cycles（读真实内存仅 ~2.9）、4200 万次 L1 miss 不足以解释 ~110 亿额外周期的那段微架构级定量归因（疑同一物理行 4K aliasing / 存储转发伪依赖），仍待用 §5.7 topdown + perf record 收尾
 
 ---
 
@@ -189,3 +193,5 @@
 | 2026-06-27 | §6.4：cache 硬件把地址切成 `[tag\|组索引\|块偏移]` 三段定位，直接映射/组相联/全相联只是「每组放几行 E」的不同取值，写策略=命中(写直达/写回)×不命中(写分配/非写分配)两个正交选择 | 组索引取地址**中间位**不是高位（高位会让顺序访问全挤一组）；冲突不命中在 cache 没满时也发生；写命中策略和写不命中策略是两个正交问题；脏位≠有效位 | 直接映射抖动靠 padding/`alignas` 错开映射解决；写回+写分配让大量小写在 L1 合并、不打满带宽；全相联因要并行比所有行只能做小，TLB 是其现实身影；`perf c2c` 测的 false sharing 就是同一 line 的跨核写回竞争 |
 | 2026-06-27 | §6.6：存储器山把访存性能画成两维曲面——工作集大小决定「站在哪级存储」（纵深台阶 L1→L2→L3→主存），步长决定「用了多少空间局部性」（横向斜坡）；本机(Ultra 7 255H)实测跑出 L1≈85→L2≈48→L3≈33→主存≈20 GB/s 四级断崖，断崖位置精确落在 48K/3M/24M 容量边界 | 山顶平山脚陡——工作集进 L1 时 stride 几乎不影响（没 miss 可摊），只有落到主存空间局部性才救命；stride 伤害到「每 line 只剩 1 个元素」(本机 s8=64B)就到顶、再大压平；矩阵乘 6 版本计算量完全相同、性能差几倍纯来自 miss 率 | 用软件量硬件——纵切面台阶反推各级 cache 容量、和 lscpu 对上；矩阵乘 kij/ikj(B、C 全 stride-1)比 jki/kji 快几倍，是 BLAS 循环重排+分块的最小模型；tiling 把工作集切进 cache = 往山顶爬，对应列存/im2col/分块卷积 |
 | 2026-06-28 | §5.12-5.14：load/store 也是有延迟的功能单元——指针追逐 CPE≈load 延迟(4)、store→load 别名经存储转发 CPE 暴涨；优化分层施力(算法>消妨碍因素>循环展开/多累加器)，先 profile 再优化、Amdahl 定上限 | "store 比 load 快"是错觉(别名时转发链拉到~6cyc)；链表 CPE≈4 是 load 延迟串成关键路径而非 cache 慢；别名是编译器**无法证明不别名**时的悲观假设；gprof 采样估时对短函数失真；优化前必须先知道 α | `restrict` 解开别名悲观假设(BLAS/memcpy)；指针追逐 load-延迟受限是"数组优于链式"的微架构理由；store buffer 是 x86 TSO 重排与多线程内存屏障的根源；perf record+火焰图替代需重编译的 gprof |
+| 2026-06-29 | §9.13 内核源码导览：把第 9 章机制对接 Linux 6.17 真实代码——一次缺页的代码之旅 `exc_page_fault→handle_mm_fault→handle_pte_fault` 按 PTE 状态分流(`do_anonymous_page`/`do_fault`/`do_swap_page`/`do_wp_page`)，每条分支对应一个书本概念；外加书本没讲的 rmap 反向映射、kswapd/LRU 回收、脏页回写 writeback（per-bdi flusher + balance_dirty_pages 限流）三块深水区 |
+| 2026-06-29 | §9.13 重构：把单文件 summary 改成对标参考 mm 文档的多文件「内核虚拟内存说明书」（00-index + 01 地址空间/02 页表/03 缺页主线/04 demand paging+COW/05 rmap/06 回收swap/07 脏页回写/08 观测实验），ARM64 架构基准 + 6.x 内核，实验迁入 experiments/ | 架构基准选 ARM64 但实验在 x86 本机跑——核心 mm 路径(handle_mm_fault 往后)架构无关、同一份 mm/*.c，只有异常入口(el0_da vs exc_page_fault)/页表级数/PTE 位架构相关；参考文档基于 5.x(链表+mm_rb)，本文以 6.x maple tree/folio 为准并注演进；行号沿用参考会偏移、新增内容不编行号 | 图文用 ASCII 调用链(带 文件:函数 注释)+ Mermaid(关系图/分流决策/LRU 状态机)；每条机制配 /proc 观测点 + bpftrace/ftrace 追踪靶子 | 旧教程的 `vm_next`链表/`mm_rb`红黑树在 6.1+ 已被 maple tree(`mm->mm_mt`)单结构取代，照搬会编译不过；`page`≠`folio`(后者保证指向复合页头页)；段错误与正常换页同入口、只在查 VMA/查权限两关分流；读未初始化匿名页不分配实页(共享 ZERO_PAGE)；COW 复制在 `do_wp_page`、按单页、第一次写才发生 | 免 root 三件套量化内核行为：statm/stat 的 RSS·minflt·majflt、`/proc/vmstat` 的 pgfault/pgmajfault/pgsteal_direct、`/proc/<pid>/smaps` 的 Anon/Shared；进阶用 bpftrace/trace-cmd(需 root)在 `do_wp_page`/`handle_mm_fault` 下探针，把调用链从读源码想象变成亲眼触发 |

@@ -39,6 +39,17 @@ Chapter9/9.9-9.10/expirements/race
 Chapter9/9.9-9.10/expirements/shm
 Chapter9/9.9-9.10/expirements/race.log
 
+# §9.13 内核源码软链接（指向仓库外的 RK3562 内核树，不入库）
+Chapter9/9.13-kernel-vm-source/kernel-src
+
+# §9.13 内核虚拟内存说明书实验二进制和测试数据
+Chapter9/9.13-kernel-vm-source/experiments/zero_page
+Chapter9/9.13-kernel-vm-source/experiments/vmstat_fault
+Chapter9/9.13-kernel-vm-source/experiments/cow_trace
+Chapter9/9.13-kernel-vm-source/experiments/dirty_writeback
+Chapter9/9.13-kernel-vm-source/experiments/bigfile.tmp
+Chapter9/9.13-kernel-vm-source/experiments/dirty_test.tmp
+
 # §5.11 实验二进制
 Chapter5/5.11/expirements/bp_branch
 Chapter5/5.11/expirements/bp_cmov

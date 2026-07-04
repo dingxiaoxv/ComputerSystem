@@ -68,6 +68,7 @@ Chapter5/5.12-5.14/expirements/perf.data
 Chapter10/experiments/shared
 Chapter10/experiments/uds_client
 Chapter10/experiments/uds_server
+Chapter10/experiments/uds_passfd
 
 # coredump
 core

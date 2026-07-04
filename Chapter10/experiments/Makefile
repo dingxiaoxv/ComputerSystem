@@ -32,7 +32,13 @@ uds: uds_server uds_client
 	@kill `cat .uds_server.pid` 2>/dev/null; rm -f .uds_server.pid $(UDS_SOCK)
 	@echo "[demo] done. 'ls -l $(UDS_SOCK)' 期间可见一个 s 类型文件"
 
-clean:
-	rm -f tsan_race data.txt uds_server uds_client .uds_server.pid $(UDS_SOCK)
+# ---- SCM_RIGHTS 传递 fd 实验（socketpair + fork，无需 bind/connect）----
+passfd: uds_passfd.c
+	gcc $(CFLAGS) uds_passfd.c -o uds_passfd
+	@echo "[demo] 父进程 open 一个文件，把 fd 传给子进程，子进程用新 fd 读出内容："
+	@./uds_passfd
 
-.PHONY: race uds clean
+clean:
+	rm -f tsan_race data.txt uds_server uds_client uds_passfd .uds_server.pid $(UDS_SOCK)
+
+.PHONY: race uds passfd clean

@@ -280,6 +280,38 @@ TCP 做不到、UDS 能做的事：把一个**打开的 fd** 通过 `sendmsg` �
 
 **真实用途**：主进程 `accept` 到一个连接，把 `connfd` 发给某个 worker 进程去处理——这是 nginx master/worker、systemd socket activation 的底层机制。传 fd 传的是「打开文件表项」这一层，不是数字本身，所以两边 fd 号不同但指向同一个内核对象。
 
+**配套可运行代码**：`experiments/uds_passfd.c`（`cd experiments && make passfd`），用 `socketpair + fork` 省掉 bind/connect，聚焦「传 fd」本身。核心是 `sendmsg` 的**辅助数据**——fd 不放普通数据缓冲，而是塞进 `msg_control` 的 cmsg，类型标 `SCM_RIGHTS`：
+
+```c
+// 发送端：把一个 fd 塞进 cmsg 发出去（关键片段）
+char dummy = '*';                                   // ← 必须捎 ≥1 字节正常数据，
+struct iovec iov = { &dummy, 1 };                   //   否则多数内核不携带 SCM_RIGHTS
+union { char buf[CMSG_SPACE(sizeof(int))];          // ← cmsg 有对齐要求，缓冲大小
+        struct cmsghdr align; } u;                  //   必须用 CMSG_SPACE 算，别手写
+struct msghdr msg = {0};
+msg.msg_iov = &iov;  msg.msg_iovlen = 1;
+msg.msg_control = u.buf;  msg.msg_controllen = sizeof(u.buf);
+
+struct cmsghdr *c = CMSG_FIRSTHDR(&msg);
+c->cmsg_level = SOL_SOCKET;                          // socket 层
+c->cmsg_type  = SCM_RIGHTS;                          // 「传的是 fd」
+c->cmsg_len   = CMSG_LEN(sizeof(int));
+memcpy(CMSG_DATA(c), &fd_to_send, sizeof(int));      // fd 写进 cmsg 数据区
+sendmsg(sock, &msg, 0);
+// 接收端对称：recvmsg 后用 CMSG_FIRSTHDR 取出，校验 level/type/len，再 memcpy 出 fd
+```
+
+**本机实测输出**（父进程 fd 号和子进程收到的 fd 号不同，但读出同一个文件——证明传的是内核对象而非数字）：
+
+```
+$ make passfd
+[parent] opened /etc/hostname as fd = 4, sending...
+[child]  received fd = 3 (自己进程里的新号)
+[child]  read from that fd: HP-Pro-Tower
+```
+
+⚠️ 三个必踩的坑，例子里都处理了：① **必带 ≥1 字节正常数据**（`iov` 里那个占位字节）；② **缓冲区用 `CMSG_SPACE`、长度字段用 `CMSG_LEN`**，cmsg 有对齐要求，手算 `sizeof(int)` 会错；③ **接收端务必校验 `cmsg_level/type/len`** 再取 fd，不能盲 `memcpy`。
+
 ---
 
 ## 9. 工程实践：UDS 是本机 C/S 通信的事实标准

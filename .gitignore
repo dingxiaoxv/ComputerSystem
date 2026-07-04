@@ -64,6 +64,11 @@ Chapter5/5.12-5.14/expirements/out.folded
 Chapter5/5.12-5.14/expirements/out.perf
 Chapter5/5.12-5.14/expirements/perf.data
 
+# §10.x 实验二进制
+Chapter10/experiments/shared
+Chapter10/experiments/uds_client
+Chapter10/experiments/uds_server
+
 # coredump
 core
 core.*

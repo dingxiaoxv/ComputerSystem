@@ -8,12 +8,13 @@
 
 | 项目 | 内容 |
 |------|------|
-| 当前章节 | 第 9 章 虚拟内存（进行中，§9.1-9.10 已完成） |
-| 已完成天数 | Day 1 - Day 28（第 1-3 章主线）、Day 31 - Day 34（第 7 章）、Day 35 - Day 42（§8.1-8.7）、第 9 章 §9.1-9.10 |
-| 上次学习 | 2026-06-27 |
-| 下一步 | 第 6 章 §6.7（综合：cache 对程序性能的影响，§6.4+6.5 已完成）；第 9 章 §9.11-9.12、第 8 章 §8.8、第 3 章 §3.10.4-3.11 待回补 |
+| 当前章节 | 第 10 章 系统级 I/O（§10.1-10.12 整章总结完成） |
+| 已完成天数 | Day 1 - Day 28（第 1-3 章主线）、Day 31 - Day 34（第 7 章）、Day 35 - Day 42（§8.1-8.7）、第 9 章 §9.1-9.13、第 10 章 §10.1-10.12 |
+| 上次学习 | 2026-07-01 |
+| 下一步 | 第 12 章 并发编程（§12.1 起）；第 6 章 §6.7、第 9 章 §9.11-9.12、第 8 章 §8.8、第 3 章 §3.10.4-3.11 待回补 |
 
 > 2026-06-27：提前开第 6 章 §6.1 存储技术（Day 34），完成 [Chapter6/6.1/summary.md](Chapter6/6.1/summary.md)。
+> 2026-07-01：第 10 章整章总结收口于单文件 [Chapter10/summary.md](Chapter10/summary.md)（§10.1-10.12），含 RIO 实现、`shared.c`（fork 共享偏移量）、TSan 竞态实验；解答「二进制文件怎么读」疑问。
 
 ---
 
@@ -119,12 +120,14 @@
 | Day 52 | 6.1-6.3.2 | ✅ | [6.1](Chapter6/6.1/summary.md) · [6.2-6.3](Chapter6/6.2-6.3/summary.md) |
 | Day 53 | 6.4-6.7 | 🔄 | [6.4+6.5](Chapter6/6.4-6.5/summary.md) · [6.6](Chapter6/6.6/summary.md)（6.5 已并入 6.4；6.7 待补） |
 
-### 第 10 章：系统级 I/O ⬜
+### 第 10 章：系统级 I/O ✅
+
+> 全章总结统一在单文件 [Chapter10/summary.md](Chapter10/summary.md)（§10.1-10.12）；代码在 `Chapter10/rio/`（RIO 实现）与 `Chapter10/experiments/`（`shared.c`、`tsan_race.c`）。
 
 | Day | 小节 | 状态 | 总结 |
 |-----|------|------|------|
-| Day 54 | 10.1-10.5.2 | ⬜ | — |
-| Day 55 | 10.6-10.12 | ⬜ | — |
+| Day 54 | 10.1-10.5.2 Unix I/O、RIO | ✅ | [Chapter10/summary.md](Chapter10/summary.md) |
+| Day 55 | 10.6-10.12 元数据/目录/共享文件/重定向/标准 I/O/选择准则 | ✅ | [Chapter10/summary.md](Chapter10/summary.md) |
 
 ### 第 12 章：并发编程 ⬜
 
@@ -147,6 +150,7 @@
 | 2026-06-29 | §9.13 | [Chapter9/9.13-kernel-vm-source/experiments/zero_page.c](Chapter9/9.13-kernel-vm-source/experiments/zero_page.c) | 读未初始化匿名内存（256MB/65536 页）分只读/写两阶段，量化 zero page 别名（statm RSS + stat minflt） | 只读遍历 RSS 仅 +132KB、minflt +65537（每页缺页映射共享 ZERO_PAGE 但不计 RSS）；写一遍后 RSS +256MB、minflt +65536；majflt 全程 0——「零页别名惩罚」根因坐实：`do_anonymous_page` 只读分支让所有虚拟页别名到同一物理零页 |
 | 2026-06-29 | §9.13 | [Chapter9/9.13-kernel-vm-source/experiments/vmstat_fault.c](Chapter9/9.13-kernel-vm-source/experiments/vmstat_fault.c) | minor vs major fault 分离：malloc+memset 制造 minor；fadvise(DONTNEED)+mmap+MADV_RANDOM 制造 major | minor 段 minflt 32774/majflt 0；major 段 majflt 32768（恰好=页数）/minflt 0；**必须 MADV_RANDOM**——否则 readahead+fault-around 把顺序读的 major 几乎全转成 minor（加之前 major 仅 1） |
 | 2026-06-29 | §9.13 | [Chapter9/9.13-kernel-vm-source/experiments/dirty_writeback.c](Chapter9/9.13-kernel-vm-source/experiments/dirty_writeback.c) | 持续写文件不 fsync，观察 /proc/meminfo Dirty/Writeback 水位 + 本轮吞吐曲线，看脏页回写子系统的限流（32GB/NVMe ext4 写 12GB） | 起步 ~6000MB/s（纯 page cache，Dirty 线性涨）→ ~1GB 处吞吐腰斩到 ~3000MB/s（balance_dirty_pages 软节流）→ ~2GB 后 Writeback 转非 0（flusher 介入）、Dirty 稳在 ~2.2-3.1GB 平台；**NVMe 快，全程稳在 background 水位、没撞 limit**，阈值基于可脏内存而非 MemTotal 故平台低于 32GB×10% |
+| 2026-07-01 | §10.8 | [Chapter10/experiments/shared.c](Chapter10/experiments/shared.c) | 对比「两次 open 同一文件」与「open 后 fork」两种打开方式下 `read` 的偏移量语义（foobar.txt 内容 `foobar`） | 两次 open → 两个独立打开文件表项、各自 k=0，两次 read 都得 `f`；open 后 fork → 父子共享同一打开文件表项、同一个 k，子读 `f` 把 k 推到 1、父接着读 `o`。**偏移量绑定在打开文件表项上**：open 次数决定表项个数、fork 决定谁共享表项；strace `-f` 下版本 B 只一次 openat + 一次 clone |
 
 ---
 
@@ -160,6 +164,7 @@
 
 > 学习中遇到的疑问，已解决的标记 ✅，待解决的标记 ❓
 
+- ✅ 二进制文件该怎么读（2026-07-01，§10.11 疑问）：文本函数（`fgets`/`%s`/`rio_readlineb`）以 `\n`(0x0a)/`\0`(0x00) 为边界，而二进制里这些只是普通数据字节，会被误当行尾/串尾截断，Windows 文本模式还会改写 `\r\n`。正解是**按字节数读、不按分隔符读**：C 用 `fread`+`fopen("rb")`、裸用 `read`/`rio_readn`（天然读满 n）、C++ 用 `ifstream(ios::binary).read()`（绝不用 `>>`/`getline`）。三个真实坑：字节序（读进 int 是文件原始序，跨机要 `ntohl`/`be32toh`）、结构体 padding（`fwrite(&struct)` 会写出填充字节，换架构布局变，需逐字段序列化或 `packed`）、短读是常态（靠返回值驱动循环）。工程一般不手写格式，交给 Protobuf/FlatBuffers/Cap'n Proto。展开见 [Chapter10/summary.md](Chapter10/summary.md) 文末「附：二进制文件到底怎么读」
 - 🟡 零页别名惩罚（2026-06-11，机理已解，微架构定量仍留尾）：**别名本质与基准失真根因已坐实**（2026-06-29，§9.13 + `zero_page.c`）——读未初始化匿名内存走 `do_anonymous_page` 的只读分支，所有虚拟页 PTE 指向同一物理 `ZERO_PAGE`，故 RSS 不涨却每页一次 minor fault，benchmark 量到的是别名行为而非真实内存流量（因此基准前必须先写一遍数组）。**尚未解决**：blocked 版每迭代 ~19 cycles（读真实内存仅 ~2.9）、4200 万次 L1 miss 不足以解释 ~110 亿额外周期的那段微架构级定量归因（疑同一物理行 4K aliasing / 存储转发伪依赖），仍待用 §5.7 topdown + perf record 收尾
 
 ---
@@ -194,4 +199,6 @@
 | 2026-06-27 | §6.6：存储器山把访存性能画成两维曲面——工作集大小决定「站在哪级存储」（纵深台阶 L1→L2→L3→主存），步长决定「用了多少空间局部性」（横向斜坡）；本机(Ultra 7 255H)实测跑出 L1≈85→L2≈48→L3≈33→主存≈20 GB/s 四级断崖，断崖位置精确落在 48K/3M/24M 容量边界 | 山顶平山脚陡——工作集进 L1 时 stride 几乎不影响（没 miss 可摊），只有落到主存空间局部性才救命；stride 伤害到「每 line 只剩 1 个元素」(本机 s8=64B)就到顶、再大压平；矩阵乘 6 版本计算量完全相同、性能差几倍纯来自 miss 率 | 用软件量硬件——纵切面台阶反推各级 cache 容量、和 lscpu 对上；矩阵乘 kij/ikj(B、C 全 stride-1)比 jki/kji 快几倍，是 BLAS 循环重排+分块的最小模型；tiling 把工作集切进 cache = 往山顶爬，对应列存/im2col/分块卷积 |
 | 2026-06-28 | §5.12-5.14：load/store 也是有延迟的功能单元——指针追逐 CPE≈load 延迟(4)、store→load 别名经存储转发 CPE 暴涨；优化分层施力(算法>消妨碍因素>循环展开/多累加器)，先 profile 再优化、Amdahl 定上限 | "store 比 load 快"是错觉(别名时转发链拉到~6cyc)；链表 CPE≈4 是 load 延迟串成关键路径而非 cache 慢；别名是编译器**无法证明不别名**时的悲观假设；gprof 采样估时对短函数失真；优化前必须先知道 α | `restrict` 解开别名悲观假设(BLAS/memcpy)；指针追逐 load-延迟受限是"数组优于链式"的微架构理由；store buffer 是 x86 TSO 重排与多线程内存屏障的根源；perf record+火焰图替代需重编译的 gprof |
 | 2026-06-29 | §9.13 内核源码导览：把第 9 章机制对接 Linux 6.17 真实代码——一次缺页的代码之旅 `exc_page_fault→handle_mm_fault→handle_pte_fault` 按 PTE 状态分流(`do_anonymous_page`/`do_fault`/`do_swap_page`/`do_wp_page`)，每条分支对应一个书本概念；外加书本没讲的 rmap 反向映射、kswapd/LRU 回收、脏页回写 writeback（per-bdi flusher + balance_dirty_pages 限流）三块深水区 |
+| 2026-07-01 | 第 10 章 §10.1-10.12：Unix「一切皆文件」落到 open/read/write/close/stat 五个系统调用，裸调用的坑（short count/EINTR）由 RIO 兜住；内核用三张表（描述符表/打开文件表/v-node）表示打开的文件，文件偏移量 k 绑定在打开文件表项上 | 偏移量 k 不在 fd 也不在 v-node——两次 open 同一文件各有独立 k，而 fork/dup2 共享同一个 k；short count 不是错误必须循环；标准 I/O 缓冲对 socket/双向流不友好故网络用 RIO | shell 的 `>`/`2>&1` 靠 dup2 改描述符表项指向实现；`strace -f -e openat,read,clone` 看 fork 只一次 openat；`FILE*` 重定向到文件后由行缓冲变全缓冲，崩溃前不 fflush 会丢输出 |
+| 2026-07-01 | §10.11 疑问：二进制文件必须按字节数读（fread/read/rio_readn/ifstream.read），不能用按分隔符切的文本函数——0x0a/0x00 在二进制里只是普通数据 | fopen 记得带 `b`、ifstream 记得 `ios::binary`（Windows 上关 \r\n 转换）；`fread` 也会短读要靠返回值驱动；跨机器还要处理字节序 + 结构体 padding | 工程不手写二进制格式，交 Protobuf/FlatBuffers/Cap'n Proto 统一解决字节序·对齐·版本演进；`fwrite(&struct)` 直接落盘会把编译器填充字节写出，换架构即不兼容 |
 | 2026-06-29 | §9.13 重构：把单文件 summary 改成对标参考 mm 文档的多文件「内核虚拟内存说明书」（00-index + 01 地址空间/02 页表/03 缺页主线/04 demand paging+COW/05 rmap/06 回收swap/07 脏页回写/08 观测实验），ARM64 架构基准 + 6.x 内核，实验迁入 experiments/ | 架构基准选 ARM64 但实验在 x86 本机跑——核心 mm 路径(handle_mm_fault 往后)架构无关、同一份 mm/*.c，只有异常入口(el0_da vs exc_page_fault)/页表级数/PTE 位架构相关；参考文档基于 5.x(链表+mm_rb)，本文以 6.x maple tree/folio 为准并注演进；行号沿用参考会偏移、新增内容不编行号 | 图文用 ASCII 调用链(带 文件:函数 注释)+ Mermaid(关系图/分流决策/LRU 状态机)；每条机制配 /proc 观测点 + bpftrace/ftrace 追踪靶子 | 旧教程的 `vm_next`链表/`mm_rb`红黑树在 6.1+ 已被 maple tree(`mm->mm_mt`)单结构取代，照搬会编译不过；`page`≠`folio`(后者保证指向复合页头页)；段错误与正常换页同入口、只在查 VMA/查权限两关分流；读未初始化匿名页不分配实页(共享 ZERO_PAGE)；COW 复制在 `do_wp_page`、按单页、第一次写才发生 | 免 root 三件套量化内核行为：statm/stat 的 RSS·minflt·majflt、`/proc/vmstat` 的 pgfault/pgmajfault/pgsteal_direct、`/proc/<pid>/smaps` 的 Anon/Shared；进阶用 bpftrace/trace-cmd(需 root)在 `do_wp_page`/`handle_mm_fault` 下探针，把调用链从读源码想象变成亲眼触发 |

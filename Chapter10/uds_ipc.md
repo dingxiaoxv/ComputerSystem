@@ -316,6 +316,8 @@ $ make passfd
 
 **独立进程版**（更贴近真实场景）：`experiments/passfd_send.c` + `passfd_recv.c`（`make passfd2`），把连接手段从 `socketpair` 换成**命名 UDS**（`send` 端 bind/listen、`recv` 端 connect），于是通信双方是两个各自 `./` 启动、毫无亲缘的进程；而传 fd 的 `send_fd`/`recv_fd`（那套 `sendmsg` + cmsg 代码）与父子版 `uds_passfd.c` 里的**一字不差**——正说明传 fd 只依赖一条已连通的连接，跟连接怎么建、进程有无亲缘无关。本机实测：`send` 端 `fd=5`、`recv` 端收到 `fd=4`，号不同却读到同一个文件，证明跨独立进程传的仍是内核对象。可两个终端各跑一个亲手体会。
 
+**现代 C++17 版**：`experiments/unix_socket.hpp`（RAII 薄封装）+ `passfd_cpp.cpp`（`make passfd_cpp`）。cmsg 内核机制与 C 版**一字不差**，但用 `uds::Fd`（只移动的 RAII fd）+ `uds::UnixSocket`（工厂式 `listen`/`connect`/`accept` + `send_fd`/`recv_fd`）后，**全程无手动 `close`/`memset`/裸 errno 判断**：fd 出作用域自动关，出错抛 `std::system_error`，`sockaddr_un` 用值初始化 `{}` 清零。这正是"贴着 syscall 又要现代 C++"时该有的样子——**传 fd 的本质省不掉，能省的是资源管理与错误处理的样板**。
+
 ---
 
 ## 9. 工程实践：UDS 是本机 C/S 通信的事实标准

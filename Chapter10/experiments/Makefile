@@ -57,9 +57,17 @@ passfd2: passfd_send passfd_recv
 	@wait `cat .passfd_send.pid` 2>/dev/null; rm -f .passfd_send.pid $(PASSFD_SOCK)
 	@echo "[demo] 注意：send 端 fd 号与 recv 端 fd 号不同，却读到同一文件"
 
+# ---- 现代 C++17 RAII 封装版传 fd（unix_socket.hpp）----
+CXXFLAGS := -g -O1 -std=c++17 -Wall -Wextra
+
+passfd_cpp: passfd_cpp.cpp unix_socket.hpp
+	g++ $(CXXFLAGS) passfd_cpp.cpp -o passfd_cpp
+	@echo "[demo] RAII 封装版：父发子收，全程无手动 close/memset："
+	@./passfd_cpp
+
 clean:
 	rm -f tsan_race data.txt uds_server uds_client uds_passfd \
-	      passfd_send passfd_recv .uds_server.pid .passfd_send.pid \
-	      $(UDS_SOCK) $(PASSFD_SOCK)
+	      passfd_send passfd_recv passfd_cpp .uds_server.pid .passfd_send.pid \
+	      $(UDS_SOCK) $(PASSFD_SOCK) /tmp/csapp_passfd_cpp.sock
 
-.PHONY: race uds passfd passfd2 clean
+.PHONY: race uds passfd passfd2 passfd_cpp clean

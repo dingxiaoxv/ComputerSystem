@@ -69,6 +69,8 @@ Chapter10/experiments/shared
 Chapter10/experiments/uds_client
 Chapter10/experiments/uds_server
 Chapter10/experiments/uds_passfd
+Chapter10/experiments/passfd_send
+Chapter10/experiments/passfd_recv
 
 # coredump
 core

@@ -38,7 +38,28 @@ passfd: uds_passfd.c
 	@echo "[demo] 父进程 open 一个文件，把 fd 传给子进程，子进程用新 fd 读出内容："
 	@./uds_passfd
 
-clean:
-	rm -f tsan_race data.txt uds_server uds_client uds_passfd .uds_server.pid $(UDS_SOCK)
+# ---- 命名 UDS 版传 fd（两个独立进程，非父子）----
+PASSFD_SOCK := /tmp/csapp_passfd.sock
 
-.PHONY: race uds passfd clean
+passfd_send: passfd_send.c passfd.h
+	gcc $(CFLAGS) passfd_send.c -o passfd_send
+
+passfd_recv: passfd_recv.c passfd.h
+	gcc $(CFLAGS) passfd_recv.c -o passfd_recv
+
+# 自测：后台起 send（独立进程），再起 recv（另一独立进程）连上来收 fd、读文件。
+# 两者无亲缘关系，仅靠命名 UDS 相连。手动玩：两个终端各跑 ./passfd_send 和 ./passfd_recv。
+passfd2: passfd_send passfd_recv
+	@rm -f $(PASSFD_SOCK)
+	@./passfd_send & echo $$! > .passfd_send.pid
+	@sleep 0.3
+	@./passfd_recv
+	@wait `cat .passfd_send.pid` 2>/dev/null; rm -f .passfd_send.pid $(PASSFD_SOCK)
+	@echo "[demo] 注意：send 端 fd 号与 recv 端 fd 号不同，却读到同一文件"
+
+clean:
+	rm -f tsan_race data.txt uds_server uds_client uds_passfd \
+	      passfd_send passfd_recv .uds_server.pid .passfd_send.pid \
+	      $(UDS_SOCK) $(PASSFD_SOCK)
+
+.PHONY: race uds passfd passfd2 clean

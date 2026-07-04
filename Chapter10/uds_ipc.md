@@ -278,7 +278,9 @@ TCP 做不到、UDS 能做的事：把一个**打开的 fd** 通过 `sendmsg` �
                         └─────────┘
 ```
 
-**真实用途**：主进程 `accept` 到一个连接，把 `connfd` 发给某个 worker 进程去处理——这是 nginx master/worker、systemd socket activation 的底层机制。传 fd 传的是「打开文件表项」这一层，不是数字本身，所以两边 fd 号不同但指向同一个内核对象。
+**真实用途**：主进程 `accept` 到一个连接，把 `connfd` 发给某个 worker 进程去处理。传 fd 传的是「打开文件表项」这一层，不是数字本身，所以两边 fd 号不同但指向同一个内核对象。
+
+> ⚠️ **它不要求两端有亲缘关系**——这是最容易被 `socketpair + fork` 的演示带偏的地方。传 fd 的机制（`sendmsg`/`SCM_RIGHTS`）只要求两端有一条**已连通的 AF_UNIX 连接**；这条连接是 `socketpair`（父子/共同祖先）还是**命名 UDS**（`bind`/`accept` + `connect`，两个各自启动、毫无亲缘的进程）造的，都无所谓。真正"零亲缘"的教科书例子是 **Wayland**：合成器先起，GUI 客户端后起、`connect` 上来，把 dmabuf/共享内存的 fd 传过去共享画面缓冲；**D-Bus** 的 `UNIX_FD` 类型同理。（nginx master/worker 其实是 fork 出来的，属"有亲缘"，不是这条的例子。）另一个强约束：fd **不能跨机器**，因为传的是本机内核里那个打开文件表项的引用——这也正是 UDS 相对 TCP loopback 的独有能力。
 
 **配套可运行代码**：`experiments/uds_passfd.c`（`cd experiments && make passfd`），用 `socketpair + fork` 省掉 bind/connect，聚焦「传 fd」本身。核心是 `sendmsg` 的**辅助数据**——fd 不放普通数据缓冲，而是塞进 `msg_control` 的 cmsg，类型标 `SCM_RIGHTS`：
 
@@ -311,6 +313,8 @@ $ make passfd
 ```
 
 ⚠️ 三个必踩的坑，例子里都处理了：① **必带 ≥1 字节正常数据**（`iov` 里那个占位字节）；② **缓冲区用 `CMSG_SPACE`、长度字段用 `CMSG_LEN`**，cmsg 有对齐要求，手算 `sizeof(int)` 会错；③ **接收端务必校验 `cmsg_level/type/len`** 再取 fd，不能盲 `memcpy`。
+
+**独立进程版**（更贴近真实场景）：`experiments/passfd_send.c` + `passfd_recv.c`（`make passfd2`），把连接手段从 `socketpair` 换成**命名 UDS**（`send` 端 bind/listen、`recv` 端 connect），于是通信双方是两个各自 `./` 启动、毫无亲缘的进程；传 fd 的 `send_fd`/`recv_fd` 逻辑**原样复用**（抽在 `passfd.h`）。本机实测：`send` 端 `fd=5`、`recv` 端收到 `fd=4`，号不同却读到同一个文件，证明跨独立进程传的仍是内核对象。可两个终端各跑一个亲手体会。
 
 ---
 

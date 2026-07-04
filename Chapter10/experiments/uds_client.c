@@ -7,9 +7,11 @@
  * 与网络客户端（第 11 章）的唯一区别同样只在地址：AF_UNIX + 路径。
  *
  *   运行：./uds_client [socket_path]   默认 /tmp/csapp_uds.sock
+ *         路径以 '@' 开头 → 抽象命名空间（须与服务器一致）
  *   例：  printf 'hello\nworld\n' | ./uds_client
  */
 #include "rio.h"
+#include <stddef.h> /* offsetof */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -24,6 +26,27 @@ static void die(const char *msg) {
   exit(1);
 }
 
+/* 与 uds_server.c 的 fill_uds_addr 保持一致：'@' 前缀走抽象命名空间。
+ * 客户端与服务器必须用【完全相同】的填法和 addrlen 才能连上。 */
+static socklen_t fill_uds_addr(struct sockaddr_un *addr, const char *name) {
+  memset(addr, 0, sizeof(*addr));
+  addr->sun_family = AF_UNIX;
+  if (name[0] == '@') {
+    const char *abs = name + 1;
+    size_t len = strlen(abs);
+    if (len + 1 > sizeof(addr->sun_path))
+      die("abstract name too long");
+    addr->sun_path[0] = '\0';
+    memcpy(addr->sun_path + 1, abs, len);
+    return offsetof(struct sockaddr_un, sun_path) + 1 + len;
+  }
+  size_t len = strlen(name);
+  if (len >= sizeof(addr->sun_path))
+    die("socket path too long");
+  memcpy(addr->sun_path, name, len);
+  return sizeof(*addr);
+}
+
 int main(int argc, char *argv[]) {
   const char *sock_path = (argc > 1) ? argv[1] : DEFAULT_PATH;
 
@@ -32,14 +55,12 @@ int main(int argc, char *argv[]) {
   if (fd < 0)
     die("socket");
 
-  /* 2) 填服务器地址（同一个路径） */
+  /* 2) 填服务器地址（路径式或 '@' 抽象式，必须和服务器一致） */
   struct sockaddr_un addr;
-  memset(&addr, 0, sizeof(addr));
-  addr.sun_family = AF_UNIX;
-  strncpy(addr.sun_path, sock_path, sizeof(addr.sun_path) - 1);
+  socklen_t addrlen = fill_uds_addr(&addr, sock_path);
 
   /* 3) connect：向监听 socket 发起连接 */
-  if (connect(fd, (struct sockaddr *)&addr, sizeof(addr)) < 0)
+  if (connect(fd, (struct sockaddr *)&addr, addrlen) < 0)
     die("connect");
 
   /* 4) 收发循环：stdin 一行 -> 发送 -> 读回显 -> 打印 */

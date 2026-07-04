@@ -91,6 +91,19 @@ struct sockaddr_un {
 
 ⚠️ `sun_path` 很短（Linux 上 108 字节），路径过长会被**静默截断**——一定要检查长度（配套 `uds_server.c` 里就有 `strlen >= sizeof(sun_path)` 的显式检查）。
 
+**路径放哪：按场景选，别习惯性用 `/tmp`**
+
+| 场景 | 推荐位置 | 理由 |
+|------|----------|------|
+| 系统级 daemon | `/run/<服务名>/x.sock` | `/run` 是 tmpfs，重启自动清空；放进带权限的子目录做访问控制 |
+| 用户级服务 | `$XDG_RUNTIME_DIR/x.sock`（即 `/run/user/$UID/`） | systemd 建的 `0700` 私有目录、登出自动清理，现代正解 |
+| 父子/兄弟进程 | 不用路径，`socketpair`（见 §7③） | 无命名 → 无清理、无权限问题 |
+| 随手 demo | `/tmp/x.sock` | 方便，但**别用于生产** |
+
+- **别在生产用 `/tmp`**：全局可写（sticky 位）+ 路径可预测 → 存在**符号链接/抢占攻击**（攻击者抢先在你的路径上建对象）。要放进你独占、权限收紧的目录。
+- **权限即访问控制**（UDS 相对 TCP 端口的一大优势）：谁能 `connect` 取决于 ① socket 文件权限位（`chmod 600`，Linux 在 `connect` 时检查）；② 更可靠的是**容纳目录的权限**（`chmod 700 /run/myapp/`）。**优先靠目录权限**——更可移植、更难绕过。想把 IPC 限到同一用户，把 socket 放进 `0700` 私有目录即可。
+- **清理**：路径式 socket 是持久文件，进程崩溃**不自动删**，下次 `bind` 同路径直接 `EADDRINUSE`——所以要 `bind` 前 `unlink`、退出时再 `unlink`（配套 `uds_server.c` 的 `atexit` + 信号处理）。嫌这套麻烦？看下面 §7① 的抽象命名空间。
+
 ---
 
 ## 4. 五步 API：和网络编程一模一样，只有「地址」不同
@@ -236,7 +249,30 @@ read(3, "HELLO\n", 8192)                = 6
 
 ## 7. 三个变体（了解即可）
 
-**① 抽象命名空间（abstract namespace，Linux 特有）**：`sun_path[0] = '\0'`，后面跟名字（工具里常显示成 `@myservice`）。不落文件系统、进程退出自动回收、**无需 `unlink`**，也不受目录权限影响（代价：因此也失去了用文件权限位做访问控制的能力）。
+**① 抽象命名空间（abstract namespace，Linux 特有）**：名字不落文件系统，最后一个引用关闭时内核自动回收——**无需 `unlink`、永不 `EADDRINUSE`**。工具里显示成 `@myservice`（那个 `@` 就代表前导空字节）。代价：不落盘也就**失去了文件/目录权限管控**，访问控制只能靠 `SO_PEERCRED` 查对端凭证或 network namespace 隔离；且是 Linux 特有，不可移植。
+
+怎么填地址，三个要点（第 3 点最容易错）：
+
+```c
+#include <stddef.h>   // offsetof
+struct sockaddr_un addr;
+memset(&addr, 0, sizeof(addr));
+addr.sun_family = AF_UNIX;
+
+const char *name = "myservice";                 // 逻辑名
+addr.sun_path[0] = '\0';                        // ① 首字节 '\0' —— 这就是"抽象"的标志
+memcpy(addr.sun_path + 1, name, strlen(name));  // ② 名字放在首个 '\0' 之后
+
+// ③ addrlen 必须【精确】算，不能传 sizeof(addr)！
+socklen_t len = offsetof(struct sockaddr_un, sun_path) + 1 + strlen(name);
+bind(fd, (struct sockaddr *)&addr, len);        // connect 端用【完全相同】的填法和 len
+```
+
+- **① 首字节 `\0` 是开关**：内核见 `sun_path[0]=='\0'` 就走抽象命名空间，否则当路径。
+- **② 名字边界由 `addrlen` 定，不由 `\0` 截断**：抽象名字甚至可含嵌入的 `\0`，语义和路径式「靠 `\0` 找结尾」完全不同。
+- **③ `addrlen` 必须精确——头号坑**：路径式可偷懒传 `sizeof(struct sockaddr_un)`（内核按 `\0` 截断），但抽象式若传 `sizeof(addr)`，`sun_path` 后面的填零字节会**全被算进名字**，服务名变成 `"myservice\0\0\0…"`。这时能自己连自己（两端都错得一样），但换个正确填 `addrlen` 的客户端就连不上，极其隐蔽。务必用 `offsetof(...) + 1 + strlen(name)`。
+
+**配套实测**：`uds_server.c` / `uds_client.c` 已支持 `@` 前缀切换（`make uds_abstract`），内部用一个 `fill_uds_addr()` 按 `@` 分流路径式/抽象式并返回精确 `addrlen`。本机验证：`@csapp_uds` 能正常回显、`/tmp` 下无任何 socket 文件、`ss -xl` 与 `/proc/net/unix` 里显示 `@csapp_uds`、且 server 杀掉后可**立即重启同名**（无 `EADDRINUSE`，对比路径式的残留文件）。
 
 **② `SOCK_DGRAM`**：本机版「UDP」——保留消息边界（一次 `recv` 对应一次 `send`）、本机传输可靠不丢，适合定长消息。
 

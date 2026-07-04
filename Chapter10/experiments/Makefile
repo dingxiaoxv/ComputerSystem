@@ -32,6 +32,15 @@ uds: uds_server uds_client
 	@kill `cat .uds_server.pid` 2>/dev/null; rm -f .uds_server.pid $(UDS_SOCK)
 	@echo "[demo] done. 'ls -l $(UDS_SOCK)' 期间可见一个 s 类型文件"
 
+# 抽象命名空间自测：'@' 前缀 → 不落文件系统、无需 unlink、无 EADDRINUSE
+UDS_ABS := @csapp_uds
+uds_abstract: uds_server uds_client
+	@./uds_server '$(UDS_ABS)' & echo $$! > .uds_server.pid
+	@sleep 0.3
+	@printf 'abstract namespace\n' | ./uds_client '$(UDS_ABS)'
+	@echo "[demo] 抽象名 $(UDS_ABS)，ls /tmp 无 socket 文件；ss -xl 里显示 $(UDS_ABS)"
+	@kill `cat .uds_server.pid` 2>/dev/null; rm -f .uds_server.pid
+
 # ---- SCM_RIGHTS 传递 fd 实验（socketpair + fork，无需 bind/connect）----
 passfd: uds_passfd.c
 	gcc $(CFLAGS) uds_passfd.c -o uds_passfd
@@ -70,4 +79,4 @@ clean:
 	      passfd_send passfd_recv passfd_cpp .uds_server.pid .passfd_send.pid \
 	      $(UDS_SOCK) $(PASSFD_SOCK) /tmp/csapp_passfd_cpp.sock
 
-.PHONY: race uds passfd passfd2 passfd_cpp clean
+.PHONY: race uds uds_abstract passfd passfd2 passfd_cpp clean

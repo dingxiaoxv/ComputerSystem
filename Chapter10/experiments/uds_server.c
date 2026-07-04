@@ -9,13 +9,15 @@
  *   - 地址是文件系统路径（struct sockaddr_un.sun_path），不是 IP + 端口
  * 其余 socket/bind/listen/accept 流程与网络编程完全一致。
  *
- *   编译：见 Makefile 的 `make uds`
+ *   编译：见 Makefile 的 `make uds`（抽象命名空间版 `make uds_abstract`）
  *   运行：./uds_server [socket_path]   默认 /tmp/csapp_uds.sock
+ *         路径以 '@' 开头 → 抽象命名空间（如 ./uds_server @csapp_uds）
  */
 #include "rio.h"
 #include <ctype.h>
 #include <errno.h>
 #include <signal.h>
+#include <stddef.h> /* offsetof */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -26,11 +28,17 @@
 #define DEFAULT_PATH "/tmp/csapp_uds.sock"
 #define BACKLOG 8
 
+/* g_sock_path 以 '@' 开头 → 抽象命名空间（Linux 特有）：不落文件系统、无需
+ * unlink、无 EADDRINUSE，但失去文件权限管控。否则是普通文件系统路径。 */
 static const char *g_sock_path = DEFAULT_PATH;
+static int is_abstract(void) { return g_sock_path[0] == '@'; }
 
-/* 退出前删除 socket 文件：bind 会在文件系统里落一个 s 类型的文件，
- * 不清理，下次 bind 同一路径会得到 EADDRINUSE。 */
-static void cleanup(void) { unlink(g_sock_path); }
+/* 退出前删除 socket 文件：路径式 bind 会落一个 s 类型文件，不清理下次会
+ * EADDRINUSE；抽象命名空间没有文件可删，内核在最后一个引用关闭时自动回收。 */
+static void cleanup(void) {
+  if (!is_abstract())
+    unlink(g_sock_path);
+}
 
 /* 信号处理器：Ctrl-C / kill 时也要删掉 socket 文件后再退出。
  * 只能调异步信号安全函数（unlink/_exit 安全，printf/exit 不安全）；
@@ -52,6 +60,30 @@ static void buf_toupper(char *buf, size_t len) {
     buf[i] = (char)toupper((unsigned char)buf[i]);
 }
 
+/* 填充 UDS 地址，返回该传给 bind/connect 的 addrlen。
+ *   name 以 '@' 开头 → 抽象命名空间：首字节置 '\0'（这就是"抽象"的标志），
+ *     名字放其后。addrlen 必须【精确】算，绝不能用 sizeof(*addr)——否则
+ *     sun_path 后面的填零字节会全被算进名字，变成一堆尾随空字节的名字。
+ *   否则 → 文件系统路径：可传整个结构，内核按 sun_path 里的 '\0' 截断。 */
+static socklen_t fill_uds_addr(struct sockaddr_un *addr, const char *name) {
+  memset(addr, 0, sizeof(*addr));
+  addr->sun_family = AF_UNIX;
+  if (name[0] == '@') {
+    const char *abs = name + 1; /* 去掉前导 '@' 标记，它只是本程序的约定 */
+    size_t len = strlen(abs);
+    if (len + 1 > sizeof(addr->sun_path)) /* 首字节 '\0' + 名字 */
+      die("abstract name too long");
+    addr->sun_path[0] = '\0';
+    memcpy(addr->sun_path + 1, abs, len);
+    return offsetof(struct sockaddr_un, sun_path) + 1 + len;
+  }
+  size_t len = strlen(name);
+  if (len >= sizeof(addr->sun_path))
+    die("socket path too long");
+  memcpy(addr->sun_path, name, len);
+  return sizeof(*addr);
+}
+
 int main(int argc, char *argv[]) {
   if (argc > 1)
     g_sock_path = argv[1];
@@ -65,20 +97,15 @@ int main(int argc, char *argv[]) {
   if (listenfd < 0)
     die("socket");
 
-  /* 2) 填地址结构。UDS 的地址就是一个文件系统路径。
-   *    memset 清零很关键：bind 靠 sun_path 里的 '\0' 定位路径结尾，
-   *    不清零会读到栈上垃圾。sun_path 通常仅 108 字节，超长会被静默截断，故先查长度。 */
+  /* 2) 填地址结构。路径式或抽象式由 fill_uds_addr 按 '@' 前缀分流，
+   *    返回精确的 addrlen（抽象式尤其不能用 sizeof）。 */
   struct sockaddr_un addr;
-  memset(&addr, 0, sizeof(addr));
-  addr.sun_family = AF_UNIX;
-  if (strlen(g_sock_path) >= sizeof(addr.sun_path))
-    die("socket path too long");
-  strncpy(addr.sun_path, g_sock_path, sizeof(addr.sun_path) - 1);
+  socklen_t addrlen = fill_uds_addr(&addr, g_sock_path);
 
-  /* 3) bind 前先清掉可能残留的旧 socket 文件，否则 EADDRINUSE。
+  /* 3) bind 前先清掉可能残留的旧 socket 文件（抽象式为 no-op），否则 EADDRINUSE。
    *    bind 成功返回 0、失败返回 -1。 */
   cleanup();
-  if (bind(listenfd, (struct sockaddr *)&addr, sizeof(addr)) < 0)
+  if (bind(listenfd, (struct sockaddr *)&addr, addrlen) < 0)
     die("bind");
 
   /* 进程被 Ctrl-C / kill 时也要删掉 socket 文件 */

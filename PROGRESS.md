@@ -10,11 +10,12 @@
 |------|------|
 | 当前章节 | 第 10 章 系统级 I/O（§10.1-10.12 整章总结完成） |
 | 已完成天数 | Day 1 - Day 28（第 1-3 章主线）、Day 31 - Day 34（第 7 章）、Day 35 - Day 42（§8.1-8.7）、第 9 章 §9.1-9.13、第 10 章 §10.1-10.12 |
-| 上次学习 | 2026-07-01 |
+| 上次学习 | 2026-07-04 |
 | 下一步 | 第 12 章 并发编程（§12.1 起）；第 6 章 §6.7、第 9 章 §9.11-9.12、第 8 章 §8.8、第 3 章 §3.10.4-3.11 待回补 |
 
 > 2026-06-27：提前开第 6 章 §6.1 存储技术（Day 34），完成 [Chapter6/6.1/summary.md](Chapter6/6.1/summary.md)。
 > 2026-07-01：第 10 章整章总结收口于单文件 [Chapter10/summary.md](Chapter10/summary.md)（§10.1-10.12），含 RIO 实现、`shared.c`（fork 共享偏移量）、TSan 竞态实验；解答「二进制文件怎么读」疑问。
+> 2026-07-04：补第 10 章 UDS 专题 [Chapter10/uds_ipc.md](Chapter10/uds_ipc.md)——本机 IPC、SCM_RIGHTS 传 fd（父子/独立进程/C++17 RAII 三版本）、抽象命名空间、路径选择与权限管控；配套代码全部本机实测。
 
 ---
 
@@ -122,12 +123,14 @@
 
 ### 第 10 章：系统级 I/O ✅
 
-> 全章总结统一在单文件 [Chapter10/summary.md](Chapter10/summary.md)（§10.1-10.12）；代码在 `Chapter10/rio/`（RIO 实现）与 `Chapter10/experiments/`（`shared.c`、`tsan_race.c`）。
+> 全章总结统一在单文件 [Chapter10/summary.md](Chapter10/summary.md)（§10.1-10.12）；代码在 `Chapter10/rio/`（RIO 实现）与 `Chapter10/experiments/`（`shared.c`、`tsan_race.c`、UDS 专题一系列）。
+> 补充专题 [Chapter10/uds_ipc.md](Chapter10/uds_ipc.md)：Unix Domain Socket 本机 IPC（挂第 10 章，非书中正式小节）——socket 也是文件/复用 RIO、SCM_RIGHTS 传 fd、抽象命名空间、路径与权限管控。
 
 | Day | 小节 | 状态 | 总结 |
 |-----|------|------|------|
 | Day 54 | 10.1-10.5.2 Unix I/O、RIO | ✅ | [Chapter10/summary.md](Chapter10/summary.md) |
 | Day 55 | 10.6-10.12 元数据/目录/共享文件/重定向/标准 I/O/选择准则 | ✅ | [Chapter10/summary.md](Chapter10/summary.md) |
+| 专题 | UDS 本机 IPC + 传 fd + 抽象命名空间 | ✅ | [Chapter10/uds_ipc.md](Chapter10/uds_ipc.md) |
 
 ### 第 12 章：并发编程 ⬜
 
@@ -151,6 +154,8 @@
 | 2026-06-29 | §9.13 | [Chapter9/9.13-kernel-vm-source/experiments/vmstat_fault.c](Chapter9/9.13-kernel-vm-source/experiments/vmstat_fault.c) | minor vs major fault 分离：malloc+memset 制造 minor；fadvise(DONTNEED)+mmap+MADV_RANDOM 制造 major | minor 段 minflt 32774/majflt 0；major 段 majflt 32768（恰好=页数）/minflt 0；**必须 MADV_RANDOM**——否则 readahead+fault-around 把顺序读的 major 几乎全转成 minor（加之前 major 仅 1） |
 | 2026-06-29 | §9.13 | [Chapter9/9.13-kernel-vm-source/experiments/dirty_writeback.c](Chapter9/9.13-kernel-vm-source/experiments/dirty_writeback.c) | 持续写文件不 fsync，观察 /proc/meminfo Dirty/Writeback 水位 + 本轮吞吐曲线，看脏页回写子系统的限流（32GB/NVMe ext4 写 12GB） | 起步 ~6000MB/s（纯 page cache，Dirty 线性涨）→ ~1GB 处吞吐腰斩到 ~3000MB/s（balance_dirty_pages 软节流）→ ~2GB 后 Writeback 转非 0（flusher 介入）、Dirty 稳在 ~2.2-3.1GB 平台；**NVMe 快，全程稳在 background 水位、没撞 limit**，阈值基于可脏内存而非 MemTotal 故平台低于 32GB×10% |
 | 2026-07-01 | §10.8 | [Chapter10/experiments/shared.c](Chapter10/experiments/shared.c) | 对比「两次 open 同一文件」与「open 后 fork」两种打开方式下 `read` 的偏移量语义（foobar.txt 内容 `foobar`） | 两次 open → 两个独立打开文件表项、各自 k=0，两次 read 都得 `f`；open 后 fork → 父子共享同一打开文件表项、同一个 k，子读 `f` 把 k 推到 1、父接着读 `o`。**偏移量绑定在打开文件表项上**：open 次数决定表项个数、fork 决定谁共享表项；strace `-f` 下版本 B 只一次 openat + 一次 clone |
+| 2026-07-04 | 第 10 章·UDS 专题 | [Chapter10/uds_ipc.md](Chapter10/uds_ipc.md)；`experiments/` 下 `uds_server.c`·`uds_client.c`·`uds_passfd.c`·`passfd_send/recv.c`·`unix_socket.hpp`+`passfd_cpp.cpp` | UDS 本机 IPC：C/S 回显复用 RIO（`make uds`）；SCM_RIGHTS 传 fd 三版本——socketpair 父子（`passfd`）、命名 UDS 独立进程（`passfd2`）、C++17 RAII 封装（`passfd_cpp`）；server 健壮性收尾 | **传 fd 传的是内核对象非数字**：send 端 fd=5、recv 端 fd=4 却读到同一文件；机制只依赖一条已连通 AF_UNIX 连接，**与进程亲缘/建连方式无关**（socketpair 限父子，命名 UDS 任意独立进程），且 fd 不能跨机器。三个 cmsg 坑：必带 ≥1 字节数据、缓冲用 `CMSG_SPACE`/长度用 `CMSG_LEN` 别手算、收端先校验 level/type/len 再取。server 修 3 个真 bug（`!bind` 反判返回值、`buf_toupper` 越界传 RIO_BUFSIZE、路径误用常量）+ 补 SIGPIPE 忽略/accept EINTR 重试/`setvbuf` 防 `_exit` 丢日志；C++ 版结论：cmsg 机制省不掉，RAII 省掉的是 close/memset/errno 样板 |
+| 2026-07-04 | UDS·抽象命名空间 | `experiments/uds_server.c`·`uds_client.c`（`make uds_abstract`） | `@` 前缀切换抽象命名空间 vs 路径式，`fill_uds_addr()` 按 `@` 统一分流并返回精确 addrlen | 抽象式 `sun_path[0]='\0'`+名字随后：**不落文件系统、内核自动回收、无需 unlink、无 EADDRINUSE**（实测 server 杀掉可即时重启同名）；`ss -xl` 与 `/proc/net/unix` 显示 `@csapp_uds`、`/tmp` 无文件。头号坑：**addrlen 必须 `offsetof+1+strlen` 精确算**，传 `sizeof(addr)` 会把尾随填零字节算进名字→能自连却拒正确外部客户端。代价：失去文件/目录权限管控（只能 `SO_PEERCRED`）、Linux 特有。路径选择：生产用 `/run` 或 `$XDG_RUNTIME_DIR`+靠目录权限，别用 `/tmp`（符号链接/抢占攻击） |
 
 ---
 
@@ -202,3 +207,4 @@
 | 2026-07-01 | 第 10 章 §10.1-10.12：Unix「一切皆文件」落到 open/read/write/close/stat 五个系统调用，裸调用的坑（short count/EINTR）由 RIO 兜住；内核用三张表（描述符表/打开文件表/v-node）表示打开的文件，文件偏移量 k 绑定在打开文件表项上 | 偏移量 k 不在 fd 也不在 v-node——两次 open 同一文件各有独立 k，而 fork/dup2 共享同一个 k；short count 不是错误必须循环；标准 I/O 缓冲对 socket/双向流不友好故网络用 RIO | shell 的 `>`/`2>&1` 靠 dup2 改描述符表项指向实现；`strace -f -e openat,read,clone` 看 fork 只一次 openat；`FILE*` 重定向到文件后由行缓冲变全缓冲，崩溃前不 fflush 会丢输出 |
 | 2026-07-01 | §10.11 疑问：二进制文件必须按字节数读（fread/read/rio_readn/ifstream.read），不能用按分隔符切的文本函数——0x0a/0x00 在二进制里只是普通数据 | fopen 记得带 `b`、ifstream 记得 `ios::binary`（Windows 上关 \r\n 转换）；`fread` 也会短读要靠返回值驱动；跨机器还要处理字节序 + 结构体 padding | 工程不手写二进制格式，交 Protobuf/FlatBuffers/Cap'n Proto 统一解决字节序·对齐·版本演进；`fwrite(&struct)` 直接落盘会把编译器填充字节写出，换架构即不兼容 |
 | 2026-06-29 | §9.13 重构：把单文件 summary 改成对标参考 mm 文档的多文件「内核虚拟内存说明书」（00-index + 01 地址空间/02 页表/03 缺页主线/04 demand paging+COW/05 rmap/06 回收swap/07 脏页回写/08 观测实验），ARM64 架构基准 + 6.x 内核，实验迁入 experiments/ | 架构基准选 ARM64 但实验在 x86 本机跑——核心 mm 路径(handle_mm_fault 往后)架构无关、同一份 mm/*.c，只有异常入口(el0_da vs exc_page_fault)/页表级数/PTE 位架构相关；参考文档基于 5.x(链表+mm_rb)，本文以 6.x maple tree/folio 为准并注演进；行号沿用参考会偏移、新增内容不编行号 | 图文用 ASCII 调用链(带 文件:函数 注释)+ Mermaid(关系图/分流决策/LRU 状态机)；每条机制配 /proc 观测点 + bpftrace/ftrace 追踪靶子 | 旧教程的 `vm_next`链表/`mm_rb`红黑树在 6.1+ 已被 maple tree(`mm->mm_mt`)单结构取代，照搬会编译不过；`page`≠`folio`(后者保证指向复合页头页)；段错误与正常换页同入口、只在查 VMA/查权限两关分流；读未初始化匿名页不分配实页(共享 ZERO_PAGE)；COW 复制在 `do_wp_page`、按单页、第一次写才发生 | 免 root 三件套量化内核行为：statm/stat 的 RSS·minflt·majflt、`/proc/vmstat` 的 pgfault/pgmajfault/pgsteal_direct、`/proc/<pid>/smaps` 的 Anon/Shared；进阶用 bpftrace/trace-cmd(需 root)在 `do_wp_page`/`handle_mm_fault` 下探针，把调用链从读源码想象变成亲眼触发 |
+| 2026-07-04 | 第 10 章 UDS 专题：UDS 是本机 IPC 正解（复用 socket API 但不进 TCP/IP 栈、按文件路径寻址）；SCM_RIGHTS 能在任意进程间传 fd（传的是打开文件表项这个内核对象、非数字），只依赖一条已连通的 AF_UNIX 连接 | 抽象命名空间的 addrlen 必须 `offsetof+1+strlen` 精确算，传 `sizeof(addr)` 会把尾随填零算进名字；传 fd 必带 ≥1 字节数据且 cmsg 只能用 `CMSG_*` 宏；`bind` 成功返回 0，别写成 `!bind`；`_exit` 不刷 stdio 缓冲，管道下丢日志（本专题第 3 次踩） | Docker/Postgres/systemd/Wayland/D-Bus 本机通信全走 UDS；nginx master/worker 与 privsep 靠传 fd 分发连接/委派特权；现代 C++ 无标准 socket，贴 syscall 就自己套 RAII(`Fd`/`UnixSocket`)，要异步/跨语言再上 Asio/Cap'n Proto-KJ/sdbus-c++ |

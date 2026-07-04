@@ -41,10 +41,10 @@ passfd: uds_passfd.c
 # ---- 命名 UDS 版传 fd（两个独立进程，非父子）----
 PASSFD_SOCK := /tmp/csapp_passfd.sock
 
-passfd_send: passfd_send.c passfd.h
+passfd_send: passfd_send.c
 	gcc $(CFLAGS) passfd_send.c -o passfd_send
 
-passfd_recv: passfd_recv.c passfd.h
+passfd_recv: passfd_recv.c
 	gcc $(CFLAGS) passfd_recv.c -o passfd_recv
 
 # 自测：后台起 send（独立进程），再起 recv（另一独立进程）连上来收 fd、读文件。

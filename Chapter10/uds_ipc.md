@@ -314,7 +314,7 @@ $ make passfd
 
 ⚠️ 三个必踩的坑，例子里都处理了：① **必带 ≥1 字节正常数据**（`iov` 里那个占位字节）；② **缓冲区用 `CMSG_SPACE`、长度字段用 `CMSG_LEN`**，cmsg 有对齐要求，手算 `sizeof(int)` 会错；③ **接收端务必校验 `cmsg_level/type/len`** 再取 fd，不能盲 `memcpy`。
 
-**独立进程版**（更贴近真实场景）：`experiments/passfd_send.c` + `passfd_recv.c`（`make passfd2`），把连接手段从 `socketpair` 换成**命名 UDS**（`send` 端 bind/listen、`recv` 端 connect），于是通信双方是两个各自 `./` 启动、毫无亲缘的进程；传 fd 的 `send_fd`/`recv_fd` 逻辑**原样复用**（抽在 `passfd.h`）。本机实测：`send` 端 `fd=5`、`recv` 端收到 `fd=4`，号不同却读到同一个文件，证明跨独立进程传的仍是内核对象。可两个终端各跑一个亲手体会。
+**独立进程版**（更贴近真实场景）：`experiments/passfd_send.c` + `passfd_recv.c`（`make passfd2`），把连接手段从 `socketpair` 换成**命名 UDS**（`send` 端 bind/listen、`recv` 端 connect），于是通信双方是两个各自 `./` 启动、毫无亲缘的进程；而传 fd 的 `send_fd`/`recv_fd`（那套 `sendmsg` + cmsg 代码）与父子版 `uds_passfd.c` 里的**一字不差**——正说明传 fd 只依赖一条已连通的连接，跟连接怎么建、进程有无亲缘无关。本机实测：`send` 端 `fd=5`、`recv` 端收到 `fd=4`，号不同却读到同一个文件，证明跨独立进程传的仍是内核对象。可两个终端各跑一个亲手体会。
 
 ---
 

@@ -73,6 +73,16 @@ Chapter10/experiments/passfd_send
 Chapter10/experiments/passfd_recv
 Chapter10/experiments/passfd_cpp
 
+# §11.x 实验二进制和抓包/上传运行产物
+Chapter11/experiments/addrinfo
+Chapter11/experiments/echo_client
+Chapter11/experiments/echo_server
+Chapter11/experiments/http_client
+Chapter11/tiny_web/tiny
+Chapter11/tiny_web/cgi-bin/adder
+Chapter11/tiny_web/uploads/*
+Chapter11/capture_results.txt
+
 # coredump
 core
 core.*

@@ -14,16 +14,10 @@
  *         路径以 '@' 开头 → 抽象命名空间（如 ./uds_server @csapp_uds）
  */
 #include "rio.h"
+#include "uds.h" /* uds_die / fill_uds_addr —— 与 uds_client.c 共用同一份 */
 #include <ctype.h>
 #include <errno.h>
 #include <signal.h>
-#include <stddef.h> /* offsetof */
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <sys/socket.h>
-#include <sys/un.h> /* struct sockaddr_un —— UDS 专属的地址结构 */
-#include <unistd.h>
 
 #define DEFAULT_PATH "/tmp/csapp_uds.sock"
 #define BACKLOG 8
@@ -49,41 +43,14 @@ static void on_signal(int sig) {
   _exit(0);
 }
 
-static void die(const char *msg) {
-  perror(msg);
-  cleanup();
-  exit(1);
-}
-
 static void buf_toupper(char *buf, size_t len) {
   for (size_t i = 0; i < len; i++)
     buf[i] = (char)toupper((unsigned char)buf[i]);
 }
 
-/* 填充 UDS 地址，返回该传给 bind/connect 的 addrlen。
- *   name 以 '@' 开头 → 抽象命名空间：首字节置 '\0'（这就是"抽象"的标志），
- *     名字放其后。addrlen 必须【精确】算，绝不能用 sizeof(*addr)——否则
- *     sun_path 后面的填零字节会全被算进名字，变成一堆尾随空字节的名字。
- *   否则 → 文件系统路径：可传整个结构，内核按 sun_path 里的 '\0' 截断。 */
-static socklen_t fill_uds_addr(struct sockaddr_un *addr, const char *name) {
-  memset(addr, 0, sizeof(*addr));
-  addr->sun_family = AF_UNIX;
-  if (name[0] == '@') {
-    const char *abs = name + 1; /* 去掉前导 '@' 标记，它只是本程序的约定 */
-    size_t len = strlen(abs);
-    if (len + 1 > sizeof(addr->sun_path)) /* 首字节 '\0' + 名字 */
-      die("abstract name too long");
-    addr->sun_path[0] = '\0';
-    memcpy(addr->sun_path + 1, abs, len);
-    return offsetof(struct sockaddr_un, sun_path) + 1 + len;
-  }
-  size_t len = strlen(name);
-  if (len >= sizeof(addr->sun_path))
-    die("socket path too long");
-  memcpy(addr->sun_path, name, len);
-  return sizeof(*addr);
-}
-
+/* 出错退出统一走 uds.h 的 uds_die。socket 文件的清理不再压在 die 里：
+ * bind 之前根本没有文件可清；bind 之后的失败都会经 exit(1) 触发 atexit(cleanup)
+ * （见 main 中 atexit 注册）；被信号打断则由 on_signal 显式 cleanup 兜底。 */
 int main(int argc, char *argv[]) {
   if (argc > 1)
     g_sock_path = argv[1];
@@ -95,7 +62,7 @@ int main(int argc, char *argv[]) {
   /* 1) 创建 socket：AF_UNIX + SOCK_STREAM = 本机字节流 */
   int listenfd = socket(AF_UNIX, SOCK_STREAM, 0);
   if (listenfd < 0)
-    die("socket");
+    uds_die("socket");
 
   /* 2) 填地址结构。路径式或抽象式由 fill_uds_addr 按 '@' 前缀分流，
    *    返回精确的 addrlen（抽象式尤其不能用 sizeof）。 */
@@ -106,7 +73,7 @@ int main(int argc, char *argv[]) {
    *    bind 成功返回 0、失败返回 -1。 */
   cleanup();
   if (bind(listenfd, (struct sockaddr *)&addr, addrlen) < 0)
-    die("bind");
+    uds_die("bind");
 
   /* 进程被 Ctrl-C / kill 时也要删掉 socket 文件 */
   atexit(cleanup);
@@ -119,7 +86,7 @@ int main(int argc, char *argv[]) {
 
   /* 4) listen：把主动 socket 变成监听 socket */
   if (listen(listenfd, BACKLOG) < 0)
-    die("listen");
+    uds_die("listen");
   printf("[server] listening on %s\n", g_sock_path);
 
   /* 5) accept 循环：单连接串行处理（教学够用；并发见实验题） */
@@ -130,7 +97,7 @@ int main(int argc, char *argv[]) {
     if (connfd < 0) {
       if (errno == EINTR)
         continue;
-      die("accept");
+      uds_die("accept");
     }
     printf("[server] client connected (connfd=%d)\n", connfd);
 

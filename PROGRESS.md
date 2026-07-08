@@ -8,14 +8,15 @@
 
 | 项目 | 内容 |
 |------|------|
-| 当前章节 | 第 10 章 系统级 I/O（§10.1-10.12 整章总结完成） |
-| 已完成天数 | Day 1 - Day 28（第 1-3 章主线）、Day 31 - Day 34（第 7 章）、Day 35 - Day 42（§8.1-8.7）、第 9 章 §9.1-9.13、第 10 章 §10.1-10.12 |
-| 上次学习 | 2026-07-04 |
+| 当前章节 | 第 11 章 网络编程（§11.1-11.6 整章总结完成） |
+| 已完成天数 | Day 1 - Day 28（第 1-3 章主线）、Day 31 - Day 34（第 7 章）、Day 35 - Day 42（§8.1-8.7）、第 9 章 §9.1-9.13、第 10 章 §10.1-10.12、第 11 章 §11.1-11.6 |
+| 上次学习 | 2026-07-05 |
 | 下一步 | 第 12 章 并发编程（§12.1 起）；第 6 章 §6.7、第 9 章 §9.11-9.12、第 8 章 §8.8、第 3 章 §3.10.4-3.11 待回补 |
 
 > 2026-06-27：提前开第 6 章 §6.1 存储技术（Day 34），完成 [Chapter6/6.1/summary.md](Chapter6/6.1/summary.md)。
 > 2026-07-01：第 10 章整章总结收口于单文件 [Chapter10/summary.md](Chapter10/summary.md)（§10.1-10.12），含 RIO 实现、`shared.c`（fork 共享偏移量）、TSan 竞态实验；解答「二进制文件怎么读」疑问。
 > 2026-07-04：补第 10 章 UDS 专题 [Chapter10/uds_ipc.md](Chapter10/uds_ipc.md)——本机 IPC、SCM_RIGHTS 传 fd（父子/独立进程/C++17 RAII 三版本）、抽象命名空间、路径选择与权限管控；配套代码全部本机实测。
+> 2026-07-05：第 11 章网络编程整章总结收口于单文件 [Chapter11/summary.md](Chapter11/summary.md)（§11.1-11.6）——socket 接口动作图、`getaddrinfo` 惯用法、HTTP 事务与 Tiny/CGI（fork+dup2+execve 串起 §8/§10）；额外补 4 个书本外专题：TCP/UDP 区别、DNS 多解析器与解析排障、listen backlog 取值、HTTP 版本演进与方法选择。代码在 `Chapter11/experiments/`（`addrinfo`、echo C/S）与 `Chapter11/tiny_web/`。
 
 ---
 
@@ -132,11 +133,22 @@
 | Day 55 | 10.6-10.12 元数据/目录/共享文件/重定向/标准 I/O/选择准则 | ✅ | [Chapter10/summary.md](Chapter10/summary.md) |
 | 专题 | UDS 本机 IPC + 传 fd + 抽象命名空间 | ✅ | [Chapter10/uds_ipc.md](Chapter10/uds_ipc.md) |
 
+### 第 11 章：网络编程 ✅
+
+> 全章总结统一在单文件 [Chapter11/summary.md](Chapter11/summary.md)（§11.1-11.6）；代码在 `Chapter11/experiments/`（`addrinfo.c` 域名→IP、echo 客户端/服务端、`http_client.cpp` libcurl C++ 客户端）与 `Chapter11/tiny_web/`（Tiny Web 服务器 + CGI）；socket 封装 `Chapter11/socket/net.h`，RIO 复用 `Chapter10/rio`。
+> 含 4 个书本外补充专题：TCP vs UDP、DNS 多公共解析器与域名解析排障、listen backlog 取值、HTTP 版本演进与请求方法选择；另有独立专题 [TCP / UDP 协议与 tcpdump 排障](Chapter11/tcp_udp.md)、[libcurl C++ HTTP 客户端](Chapter11/libcurl_cpp.md)。
+
+| Day | 小节 | 状态 | 总结 |
+|-----|------|------|------|
+| Day 56 | 11.1-11.4 网络/IP 地址/DNS/socket 接口/getaddrinfo | ✅ | [Chapter11/summary.md](Chapter11/summary.md) |
+| Day 57 | 11.5-11.6 HTTP/CGI/Tiny Web 服务器 | ✅ | [Chapter11/summary.md](Chapter11/summary.md) |
+| 补充 | TCP/UDP · DNS 排障 · backlog · HTTP 版本与方法 | ✅ | [Chapter11/summary.md](Chapter11/summary.md)；[tcp_udp.md](Chapter11/tcp_udp.md)；[libcurl_cpp.md](Chapter11/libcurl_cpp.md) |
+
 ### 第 12 章：并发编程 ⬜
 
 | Day | 小节 | 状态 | 总结 |
 |-----|------|------|------|
-| Day 56 | 12.1-12.8 | ⬜ | — |
+| Day 58 | 12.1-12.8 | ⬜ | — |
 
 ---
 
@@ -156,6 +168,8 @@
 | 2026-07-01 | §10.8 | [Chapter10/experiments/shared.c](Chapter10/experiments/shared.c) | 对比「两次 open 同一文件」与「open 后 fork」两种打开方式下 `read` 的偏移量语义（foobar.txt 内容 `foobar`） | 两次 open → 两个独立打开文件表项、各自 k=0，两次 read 都得 `f`；open 后 fork → 父子共享同一打开文件表项、同一个 k，子读 `f` 把 k 推到 1、父接着读 `o`。**偏移量绑定在打开文件表项上**：open 次数决定表项个数、fork 决定谁共享表项；strace `-f` 下版本 B 只一次 openat + 一次 clone |
 | 2026-07-04 | 第 10 章·UDS 专题 | [Chapter10/uds_ipc.md](Chapter10/uds_ipc.md)；`experiments/` 下 `uds_server.c`·`uds_client.c`·`uds_passfd.c`·`passfd_send/recv.c`·`unix_socket.hpp`+`passfd_cpp.cpp` | UDS 本机 IPC：C/S 回显复用 RIO（`make uds`）；SCM_RIGHTS 传 fd 三版本——socketpair 父子（`passfd`）、命名 UDS 独立进程（`passfd2`）、C++17 RAII 封装（`passfd_cpp`）；server 健壮性收尾 | **传 fd 传的是内核对象非数字**：send 端 fd=5、recv 端 fd=4 却读到同一文件；机制只依赖一条已连通 AF_UNIX 连接，**与进程亲缘/建连方式无关**（socketpair 限父子，命名 UDS 任意独立进程），且 fd 不能跨机器。三个 cmsg 坑：必带 ≥1 字节数据、缓冲用 `CMSG_SPACE`/长度用 `CMSG_LEN` 别手算、收端先校验 level/type/len 再取。server 修 3 个真 bug（`!bind` 反判返回值、`buf_toupper` 越界传 RIO_BUFSIZE、路径误用常量）+ 补 SIGPIPE 忽略/accept EINTR 重试/`setvbuf` 防 `_exit` 丢日志；C++ 版结论：cmsg 机制省不掉，RAII 省掉的是 close/memset/errno 样板 |
 | 2026-07-04 | UDS·抽象命名空间 | `experiments/uds_server.c`·`uds_client.c`（`make uds_abstract`） | `@` 前缀切换抽象命名空间 vs 路径式，`fill_uds_addr()` 按 `@` 统一分流并返回精确 addrlen | 抽象式 `sun_path[0]='\0'`+名字随后：**不落文件系统、内核自动回收、无需 unlink、无 EADDRINUSE**（实测 server 杀掉可即时重启同名）；`ss -xl` 与 `/proc/net/unix` 显示 `@csapp_uds`、`/tmp` 无文件。头号坑：**addrlen 必须 `offsetof+1+strlen` 精确算**，传 `sizeof(addr)` 会把尾随填零字节算进名字→能自连却拒正确外部客户端。代价：失去文件/目录权限管控（只能 `SO_PEERCRED`）、Linux 特有。路径选择：生产用 `/run` 或 `$XDG_RUNTIME_DIR`+靠目录权限，别用 `/tmp`（符号链接/抢占攻击） |
+| 2026-07-08 | 第 11 章·TCP/UDP 专题 | [Chapter11/capture_tcp_udp.sh](Chapter11/capture_tcp_udp.sh)；[Chapter11/tcp_udp.md](Chapter11/tcp_udp.md)；`/tmp/netcap/*.pcap` | 用 tcpdump 抓 TCP 握手/HTTP 明文 payload/FIN 挥手、UDP DNS 一问一答、netem 丢包实验 | 三次握手本质是交换并确认双方 ISN，同时协商 MSS/SACK/timestamp/window scale；HTTP 请求 `seq 1:76` 被服务端 `ack 76` 确认，说明连接和请求发送成功，但当前网络把域名导向 `198.18.0.156` 且不回 body，故 `curl` 超时属于应用/代理路径问题而非 TCP 连接失败；UDP DNS 头只有端口/长度/校验和，transaction ID 和重试由 DNS 应用层负责 |
+| 2026-07-08 | 第 11 章·libcurl C++ 专题 | [Chapter11/libcurl_cpp.md](Chapter11/libcurl_cpp.md)；[Chapter11/experiments/http_client.cpp](Chapter11/experiments/http_client.cpp) | 用 libcurl easy API 写 C++17 RAII HTTP 客户端，覆盖 GET/POST JSON/自定义 header/超时/错误处理 | `make http_client` 已真实编译链接通过，动态链接 `/lib/x86_64-linux-gnu/libcurl.so.4`；easy 生命周期是 global_init→easy_init→setopt→perform→getinfo→cleanup，核心是 WRITE/HEADER/READ 回调；错误要分两层：`CURLcode` 表示 DNS/连接/超时/TLS 等传输失败，HTTP 4xx/5xx 是传输成功后的业务状态 |
 
 ---
 

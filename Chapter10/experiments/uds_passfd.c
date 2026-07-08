@@ -17,96 +17,19 @@
  *   编译：见 Makefile 的 `make passfd`
  *   运行：./uds_passfd            （无参数，自己 fork）
  */
+#include "uds.h" /* uds_die / send_fd / recv_fd —— 与 passfd_send/recv.c 共用 */
 #include <fcntl.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <sys/socket.h>
 #include <sys/wait.h>
-#include <unistd.h>
-
-static void die(const char *msg) {
-  perror(msg);
-  exit(1);
-}
-
-/* 通过 UDS 把 fd_to_send 发到 sock 上。
- * 关键：fd 不放在普通数据缓冲里，而是放进 msg_control 的 cmsg（SCM_RIGHTS）。 */
-static void send_fd(int sock, int fd_to_send) {
-  /* 必须捎带至少 1 字节普通数据：不少内核实现下，没有正常数据的
-   * sendmsg 无法携带 SCM_RIGHTS。这里发一个占位字节。 */
-  char dummy = '*';
-  struct iovec iov = {.iov_base = &dummy, .iov_len = 1};
-
-  /* cmsg 有对齐要求，缓冲区大小必须用 CMSG_SPACE 算，不能手写 sizeof(int)。
-   * union 是为了保证按 struct cmsghdr 对齐。 */
-  union {
-    char buf[CMSG_SPACE(sizeof(int))];
-    struct cmsghdr align;
-  } u;
-  memset(&u, 0, sizeof(u));
-
-  struct msghdr msg;
-  memset(&msg, 0, sizeof(msg));
-  msg.msg_iov = &iov;
-  msg.msg_iovlen = 1;
-  msg.msg_control = u.buf;
-  msg.msg_controllen = sizeof(u.buf);
-
-  /* 填第一个（也是唯一一个）控制消息头 */
-  struct cmsghdr *cmsg = CMSG_FIRSTHDR(&msg);
-  cmsg->cmsg_level = SOL_SOCKET; /* socket 层 */
-  cmsg->cmsg_type = SCM_RIGHTS;  /* 「传的是 fd（权限）」 */
-  cmsg->cmsg_len = CMSG_LEN(sizeof(int));
-  memcpy(CMSG_DATA(cmsg), &fd_to_send, sizeof(int)); /* 把 fd 写进 cmsg 数据区 */
-
-  if (sendmsg(sock, &msg, 0) < 0)
-    die("sendmsg");
-}
-
-/* 从 sock 收一个 fd，返回【本进程里新的 fd 号】。 */
-static int recv_fd(int sock) {
-  char dummy;
-  struct iovec iov = {.iov_base = &dummy, .iov_len = 1};
-
-  union {
-    char buf[CMSG_SPACE(sizeof(int))];
-    struct cmsghdr align;
-  } u;
-  memset(&u, 0, sizeof(u));
-
-  struct msghdr msg;
-  memset(&msg, 0, sizeof(msg));
-  msg.msg_iov = &iov;
-  msg.msg_iovlen = 1;
-  msg.msg_control = u.buf;
-  msg.msg_controllen = sizeof(u.buf);
-
-  ssize_t n = recvmsg(sock, &msg, 0);
-  if (n < 0)
-    die("recvmsg");
-
-  /* 从辅助数据里把 fd 取出来，务必校验类型，别盲取 */
-  struct cmsghdr *cmsg = CMSG_FIRSTHDR(&msg);
-  if (cmsg == NULL || cmsg->cmsg_level != SOL_SOCKET || cmsg->cmsg_type != SCM_RIGHTS ||
-      cmsg->cmsg_len != CMSG_LEN(sizeof(int))) {
-    fprintf(stderr, "recv_fd: no valid SCM_RIGHTS cmsg\n");
-    exit(1);
-  }
-  int fd;
-  memcpy(&fd, CMSG_DATA(cmsg), sizeof(int));
-  return fd;
-}
 
 int main(void) {
   /* socketpair 一步造出一对已连通的 UDS，专给 fork 后的父子用 */
   int sv[2];
   if (socketpair(AF_UNIX, SOCK_STREAM, 0, sv) < 0)
-    die("socketpair");
+    uds_die("socketpair");
 
   pid_t pid = fork();
   if (pid < 0)
-    die("fork");
+    uds_die("fork");
 
   if (pid == 0) {
     /* ── 子进程：收 fd 并用它读文件 ── */
@@ -117,7 +40,7 @@ int main(void) {
     char content[256];
     ssize_t n = read(fd, content, sizeof(content) - 1);
     if (n < 0)
-      die("read");
+      uds_die("read");
     content[n] = '\0';
     printf("[child]  read from that fd: %s", content);
 
@@ -129,7 +52,7 @@ int main(void) {
     close(sv[1]);
     int fd = open("/etc/hostname", O_RDONLY);
     if (fd < 0)
-      die("open");
+      uds_die("open");
     printf("[parent] opened /etc/hostname as fd = %d, sending...\n", fd);
 
     send_fd(sv[0], fd);

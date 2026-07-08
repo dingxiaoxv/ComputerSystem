@@ -17,10 +17,10 @@ data.txt:
 # ---- Unix Domain Socket 本机 IPC 实验 ----
 UDS_SOCK := /tmp/csapp_uds.sock
 
-uds_server: uds_server.c $(RIO_DIR)/rio.c
+uds_server: uds_server.c uds.h $(RIO_DIR)/rio.c
 	gcc $(CFLAGS) uds_server.c $(RIO_DIR)/rio.c -o uds_server
 
-uds_client: uds_client.c $(RIO_DIR)/rio.c
+uds_client: uds_client.c uds.h $(RIO_DIR)/rio.c
 	gcc $(CFLAGS) uds_client.c $(RIO_DIR)/rio.c -o uds_client
 
 # 一键自测：后台起 server，用 client 喂两行，比对大写回显，再收尾清理
@@ -42,7 +42,7 @@ uds_abstract: uds_server uds_client
 	@kill `cat .uds_server.pid` 2>/dev/null; rm -f .uds_server.pid
 
 # ---- SCM_RIGHTS 传递 fd 实验（socketpair + fork，无需 bind/connect）----
-passfd: uds_passfd.c
+passfd: uds_passfd.c uds.h
 	gcc $(CFLAGS) uds_passfd.c -o uds_passfd
 	@echo "[demo] 父进程 open 一个文件，把 fd 传给子进程，子进程用新 fd 读出内容："
 	@./uds_passfd
@@ -50,10 +50,10 @@ passfd: uds_passfd.c
 # ---- 命名 UDS 版传 fd（两个独立进程，非父子）----
 PASSFD_SOCK := /tmp/csapp_passfd.sock
 
-passfd_send: passfd_send.c
+passfd_send: passfd_send.c uds.h
 	gcc $(CFLAGS) passfd_send.c -o passfd_send
 
-passfd_recv: passfd_recv.c
+passfd_recv: passfd_recv.c uds.h
 	gcc $(CFLAGS) passfd_recv.c -o passfd_recv
 
 # 自测：后台起 send（独立进程），再起 recv（另一独立进程）连上来收 fd、读文件。

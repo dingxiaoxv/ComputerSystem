@@ -1,0 +1,41 @@
+#include <grpcpp/grpcpp.h>
+
+#include <iostream>
+#include <memory>
+#include <string>
+
+#include "echo.grpc.pb.h"
+
+class EchoServiceImpl final : public csapp::ipc::EchoService::Service {
+ public:
+  grpc::Status Echo(grpc::ServerContext *context,
+                    const csapp::ipc::EchoRequest *request,
+                    csapp::ipc::EchoReply *reply) override {
+    (void)context;
+    reply->set_message("echo: " + request->message());
+    std::cout << "server received: " << request->message() << std::endl;
+    return grpc::Status::OK;
+  }
+};
+
+int main(int argc, char **argv) {
+  std::string address = "0.0.0.0:50051";
+  if (argc == 2) {
+    address = argv[1];
+  }
+
+  EchoServiceImpl service;
+  grpc::ServerBuilder builder;
+  builder.AddListeningPort(address, grpc::InsecureServerCredentials());
+  builder.RegisterService(&service);
+
+  std::unique_ptr<grpc::Server> server(builder.BuildAndStart());
+  if (!server) {
+    std::cerr << "failed to start gRPC server on " << address << std::endl;
+    return 1;
+  }
+
+  std::cout << "gRPC echo server listening on " << address << std::endl;
+  server->Wait();
+  return 0;
+}

@@ -8,15 +8,21 @@
 
 | 项目 | 内容 |
 |------|------|
-| 当前章节 | 第 11 章 网络编程（§11.1-11.6 整章总结完成） |
-| 已完成天数 | Day 1 - Day 28（第 1-3 章主线）、Day 31 - Day 34（第 7 章）、Day 35 - Day 42（§8.1-8.7）、第 9 章 §9.1-9.13、第 10 章 §10.1-10.12、第 11 章 §11.1-11.6 |
-| 上次学习 | 2026-07-05 |
-| 下一步 | 第 12 章 并发编程（§12.1 起）；第 6 章 §6.7、第 9 章 §9.11-9.12、第 8 章 §8.8、第 3 章 §3.10.4-3.11 待回补 |
+| 当前章节 | 第 12 章 并发编程（§12.1-12.7 已完成，下一步 §12.8） |
+| 已完成天数 | Day 1 - Day 28（第 1-3 章主线）、Day 31 - Day 34（第 7 章）、Day 35 - Day 42（§8.1-8.7）、第 9 章 §9.1-9.13、第 10 章 §10.1-10.12、第 11 章 §11.1-11.6、第 12 章 §12.1-12.7 |
+| 上次学习 | 2026-07-26 |
+| 下一步 | 学习第 12 章 §12.8 小结；第 6 章 §6.7、第 9 章 §9.11-9.12、第 8 章 §8.8、第 3 章 §3.10.4-3.11 待回补 |
 
 > 2026-06-27：提前开第 6 章 §6.1 存储技术（Day 34），完成 [Chapter6/6.1/summary.md](Chapter6/6.1/summary.md)。
 > 2026-07-01：第 10 章整章总结收口于单文件 [Chapter10/summary.md](Chapter10/summary.md)（§10.1-10.12），含 RIO 实现、`shared.c`（fork 共享偏移量）、TSan 竞态实验；解答「二进制文件怎么读」疑问。
 > 2026-07-04：补第 10 章 UDS 专题 [Chapter10/uds_ipc.md](Chapter10/uds_ipc.md)——本机 IPC、SCM_RIGHTS 传 fd（父子/独立进程/C++17 RAII 三版本）、抽象命名空间、路径选择与权限管控；配套代码全部本机实测。
 > 2026-07-05：第 11 章网络编程整章总结收口于单文件 [Chapter11/summary.md](Chapter11/summary.md)（§11.1-11.6）——socket 接口动作图、`getaddrinfo` 惯用法、HTTP 事务与 Tiny/CGI（fork+dup2+execve 串起 §8/§10）；额外补 4 个书本外专题：TCP/UDP 区别、DNS 多解析器与解析排障、listen backlog 取值、HTTP 版本演进与方法选择。代码在 `Chapter11/experiments/`（`addrinfo`、echo C/S）与 `Chapter11/tiny_web/`。
+> 2026-07-12：第 12 章 §12.1 基于进程的并发编程完成于 [Chapter12/12.1/summary.md](Chapter12/12.1/summary.md)——fork-per-connection 并发服务器、SIGCHLD 回收僵尸、父子 fd 关闭规则；IPC 补充聚焦 UDS、`mmap`、`eventfd`、gRPC 四类，代码在 `Chapter12/12.1/experiments/`。
+> 2026-07-12：为 §12.2 I/O 多路复用预习新增 3 个独立文档：[select](Chapter12/12.2/select.md)、[poll](Chapter12/12.2/poll.md)、[epoll](Chapter12/12.2/epoll.md)，先建立接口语义、内核等待队列/就绪队列、复杂度和常见坑的直觉。
+> 2026-07-19：第 12 章 §12.2 完成于 [Chapter12/12.2/summary.md](Chapter12/12.2/summary.md)——贯通 select/poll/epoll、readiness 与 Reactor，重点补 nonblocking ET、输出缓冲/按需 `EPOLLOUT`、背压，以及 Muduo one loop per thread 的连接单一所有权。
+> 2026-07-19：第 12 章 §12.3 完成于 [Chapter12/12.3/summary.md](Chapter12/12.3/summary.md)，代码在 [Chapter12/12.3/experiments](Chapter12/12.3/experiments)——梳理线程共享/私有资源、pthread 创建/终止/join/detach/once，并用教材 thread-per-connection echo server 串起参数所有权、共享 fd 关闭语义和线程资源上限。
+> 2026-07-26：第 12 章 §12.4-§12.5 完成于 [§12.4](Chapter12/12.4/summary.md) 与 [§12.5](Chapter12/12.5/summary.md)——从变量实例、所有权、生命周期、不变量与 happens-before 统一分析同步错误根因；重点解释 one loop per thread 如何用连接单线程所有权减少锁，并扩展 bounded blocking MPMC、SPSC/per-slot-sequence MPMC ring，以及读者优先、写者优先和 FIFO 分阶段无饥饿读写锁。
+> 2026-07-26：第 12 章 §12.6-§12.7 完成于 [§12.6](Chapter12/12.6/summary.md) 与 [§12.7](Chapter12/12.7/summary.md)——§12.6 用并行归约串起任务划分、speedup/efficiency、强弱扩展、Amdahl 上限和 Linux `perf stat` 测量；§12.7 从 API 契约梳理四类线程不安全函数、可重入性、遗留库封装、参数竞态与全局锁顺序。
 
 ---
 
@@ -144,11 +150,16 @@
 | Day 57 | 11.5-11.6 HTTP/CGI/Tiny Web 服务器 | ✅ | [Chapter11/summary.md](Chapter11/summary.md) |
 | 补充 | TCP/UDP · DNS 排障 · backlog · HTTP 版本与方法 | ✅ | [Chapter11/summary.md](Chapter11/summary.md)；[tcp_udp.md](Chapter11/tcp_udp.md)；[libcurl_cpp.md](Chapter11/libcurl_cpp.md) |
 
-### 第 12 章：并发编程 ⬜
+### 第 12 章：并发编程 🔄
+
+> §12.1 总结在 [Chapter12/12.1/summary.md](Chapter12/12.1/summary.md)；代码在 `Chapter12/12.1/experiments/`，包含基于进程的并发 echo 服务器/客户端、UDS/`mmap`/`eventfd` C 例程，以及可选 gRPC C++ 例程。§12.2 总结在 [Chapter12/12.2/summary.md](Chapter12/12.2/summary.md)，专题材料包括 [select](Chapter12/12.2/select.md)、[poll](Chapter12/12.2/poll.md)、[epoll](Chapter12/12.2/epoll.md)、[Reactor](Chapter12/12.2/reactor.md)、[Muduo one loop per thread](Chapter12/12.2/muduo_one_loop_per_thread.md)；配套可运行例程在 `Chapter12/12.2/experiments/`。§12.3 总结在 [Chapter12/12.3/summary.md](Chapter12/12.3/summary.md)，覆盖 POSIX 线程执行模型、生命周期管理和 thread-per-connection 的所有权规则。§12.4 总结在 [Chapter12/12.4/summary.md](Chapter12/12.4/summary.md)，覆盖共享变量判定、C++ 内存模型、同步错误根因和 one loop per thread 的所有权边界。§12.5 总结在 [Chapter12/12.5/summary.md](Chapter12/12.5/summary.md)，覆盖 semaphore/CV、生产者—消费者、死锁/饥饿，以及 SPSC/MPMC 队列和公平读写锁。§12.6 总结在 [Chapter12/12.6/summary.md](Chapter12/12.6/summary.md)，覆盖线程级并行、并行归约、speedup/efficiency、强弱扩展、Amdahl 上限和可复现测量。§12.7 总结在 [Chapter12/12.7/summary.md](Chapter12/12.7/summary.md)，覆盖四类线程不安全函数、可重入性、库函数封装、race 与 deadlock 的 API 契约。
 
 | Day | 小节 | 状态 | 总结 |
 |-----|------|------|------|
-| Day 58 | 12.1-12.8 | ⬜ | — |
+| Day 58 | 12.1 基于进程的并发编程 | ✅ | [Chapter12/12.1/summary.md](Chapter12/12.1/summary.md) |
+| Day 59 | 12.2 基于 I/O 多路复用的并发编程 | ✅ | [Chapter12/12.2/summary.md](Chapter12/12.2/summary.md)；[experiments](Chapter12/12.2/experiments)（select/poll/epoll LT + epoll ET） |
+| Day 60 | 12.3-12.4 基于线程的并发编程、共享变量 | ✅ | [§12.3](Chapter12/12.3/summary.md) · [§12.4](Chapter12/12.4/summary.md) |
+| Day 61 | 12.5-12.8 同步、并行、线程安全、竞态/死锁 | 🔄 | [§12.5](Chapter12/12.5/summary.md) · [§12.6](Chapter12/12.6/summary.md) · [§12.7](Chapter12/12.7/summary.md) 已完成；§12.8 待学习 |
 
 ---
 
@@ -170,6 +181,10 @@
 | 2026-07-04 | UDS·抽象命名空间 | `experiments/uds_server.c`·`uds_client.c`（`make uds_abstract`） | `@` 前缀切换抽象命名空间 vs 路径式，`fill_uds_addr()` 按 `@` 统一分流并返回精确 addrlen | 抽象式 `sun_path[0]='\0'`+名字随后：**不落文件系统、内核自动回收、无需 unlink、无 EADDRINUSE**（实测 server 杀掉可即时重启同名）；`ss -xl` 与 `/proc/net/unix` 显示 `@csapp_uds`、`/tmp` 无文件。头号坑：**addrlen 必须 `offsetof+1+strlen` 精确算**，传 `sizeof(addr)` 会把尾随填零字节算进名字→能自连却拒正确外部客户端。代价：失去文件/目录权限管控（只能 `SO_PEERCRED`）、Linux 特有。路径选择：生产用 `/run` 或 `$XDG_RUNTIME_DIR`+靠目录权限，别用 `/tmp`（符号链接/抢占攻击） |
 | 2026-07-08 | 第 11 章·TCP/UDP 专题 | [Chapter11/capture_tcp_udp.sh](Chapter11/capture_tcp_udp.sh)；[Chapter11/tcp_udp.md](Chapter11/tcp_udp.md)；`/tmp/netcap/*.pcap` | 用 tcpdump 抓 TCP 握手/HTTP 明文 payload/FIN 挥手、UDP DNS 一问一答、netem 丢包实验 | 三次握手本质是交换并确认双方 ISN，同时协商 MSS/SACK/timestamp/window scale；HTTP 请求 `seq 1:76` 被服务端 `ack 76` 确认，说明连接和请求发送成功，但当前网络把域名导向 `198.18.0.156` 且不回 body，故 `curl` 超时属于应用/代理路径问题而非 TCP 连接失败；UDP DNS 头只有端口/长度/校验和，transaction ID 和重试由 DNS 应用层负责 |
 | 2026-07-08 | 第 11 章·libcurl C++ 专题 | [Chapter11/libcurl_cpp.md](Chapter11/libcurl_cpp.md)；[Chapter11/experiments/http_client.cpp](Chapter11/experiments/http_client.cpp) | 用 libcurl easy API 写 C++17 RAII HTTP 客户端，覆盖 GET/POST JSON/自定义 header/超时/错误处理 | `make http_client` 已真实编译链接通过，动态链接 `/lib/x86_64-linux-gnu/libcurl.so.4`；easy 生命周期是 global_init→easy_init→setopt→perform→getinfo→cleanup，核心是 WRITE/HEADER/READ 回调；错误要分两层：`CURLcode` 表示 DNS/连接/超时/TLS 等传输失败，HTTP 4xx/5xx 是传输成功后的业务状态 |
+| 2026-07-12 | §12.1 | [Chapter12/12.1/experiments](Chapter12/12.1/experiments)；[Chapter12/12.1/summary.md](Chapter12/12.1/summary.md) | 基于进程的并发 echo 服务器 + 典型 IPC 例程：`make process-echo` 验证 fork-per-connection，`make ipc` 跑通 UDS/`mmap`/`eventfd`，另补 `grpc_echo/` 可选 gRPC 示例 | 父进程只保留 `listenfd` 并关闭 `connfd`，子进程关闭 `listenfd` 后服务当前连接；`SIGCHLD` handler 必须 `while waitpid(-1, WNOHANG)` 收干净僵尸；IPC 选择核心看本机控制面(UDS)、大块共享数据(`mmap`)、事件通知(`eventfd`)还是跨语言/跨机器服务接口(gRPC) |
+| 2026-07-12 | §12.2 | [Chapter12/12.2/experiments](Chapter12/12.2/experiments)；[select](Chapter12/12.2/select.md)；[poll](Chapter12/12.2/poll.md)；[epoll](Chapter12/12.2/epoll.md)；[summary](Chapter12/12.2/summary.md) | `make clean all` 编译四个 server，`make demo` 依次跑 select/poll/epoll LT 并校验两条顺序回显；另有 `epoll_et_echo_server.c` 展示 nonblocking ET、accept/read 到 `EAGAIN`、输出缓冲和按需 `EPOLLOUT`，不在自动 demo 中 | 三者业务相同但等待机制不同：select 每轮复制/修改 `fd_set` 且受 `FD_SETSIZE` 约束；poll 分离 `events/revents` 但仍线性扫描；epoll 长期保存 interest set 并返回 ready event；基础 server 用单次 `read` 避免半行阻塞，但阻塞写仍非生产级，ET 版才补齐 drain、短写和背压边界 |
+| 2026-07-19 | §12.3 | [Chapter12/12.3/experiments](Chapter12/12.3/experiments)；[summary](Chapter12/12.3/summary.md) | 实现教材 thread-per-connection echo server；`make clean all` 无新源码警告，`make demo` 先让一条连接延迟 2 秒发送，再用两个 2 秒超时客户端验证并发回显，并重复运行确认不遗留监听进程 | 每个 `connfd` 必须有独立堆参数；`pthread_create` 成功是所有权转移点，失败由 main `free+close`，成功后由 detached worker `free+echo+close`；线程共享 fd table，所以 main 不能照搬 fork 版提前关闭 `connfd` |
+| 2026-07-26 | §12.4-§12.5 | [§12.4 summary](Chapter12/12.4/summary.md)；[§12.5 summary](Chapter12/12.5/summary.md) | 以变量引用图、进度图和 C++20 示例推导共享变量、happens-before、semaphore/CV、同步错误分类；拓展 one loop per thread、SPSC/MPMC ring 和三种读写锁，并对核心类做 `g++ -std=c++20 -Wall -Wextra -Wpedantic -pthread -fsyntax-only` 检查 | 同步正确性的核心是给 identity/ownership/lifetime/invariant/ordering 建立完整协议；one loop per thread 以连接单线程所有权缩小共享面；读者/写者偏好只能避免一侧饥饿，要靠 FIFO 到达顺序加 reader phase 才能让已入队的两侧请求都不被无限超越 |
 
 ---
 
@@ -184,7 +199,8 @@
 > 学习中遇到的疑问，已解决的标记 ✅，待解决的标记 ❓
 
 - ✅ 二进制文件该怎么读（2026-07-01，§10.11 疑问）：文本函数（`fgets`/`%s`/`rio_readlineb`）以 `\n`(0x0a)/`\0`(0x00) 为边界，而二进制里这些只是普通数据字节，会被误当行尾/串尾截断，Windows 文本模式还会改写 `\r\n`。正解是**按字节数读、不按分隔符读**：C 用 `fread`+`fopen("rb")`、裸用 `read`/`rio_readn`（天然读满 n）、C++ 用 `ifstream(ios::binary).read()`（绝不用 `>>`/`getline`）。三个真实坑：字节序（读进 int 是文件原始序，跨机要 `ntohl`/`be32toh`）、结构体 padding（`fwrite(&struct)` 会写出填充字节，换架构布局变，需逐字段序列化或 `packed`）、短读是常态（靠返回值驱动循环）。工程一般不手写格式，交给 Protobuf/FlatBuffers/Cap'n Proto。展开见 [Chapter10/summary.md](Chapter10/summary.md) 文末「附：二进制文件到底怎么读」
-- 🟡 零页别名惩罚（2026-06-11，机理已解，微架构定量仍留尾）：**别名本质与基准失真根因已坐实**（2026-06-29，§9.13 + `zero_page.c`）——读未初始化匿名内存走 `do_anonymous_page` 的只读分支，所有虚拟页 PTE 指向同一物理 `ZERO_PAGE`，故 RSS 不涨却每页一次 minor fault，benchmark 量到的是别名行为而非真实内存流量（因此基准前必须先写一遍数组）。**尚未解决**：blocked 版每迭代 ~19 cycles（读真实内存仅 ~2.9）、4200 万次 L1 miss 不足以解释 ~110 亿额外周期的那段微架构级定量归因（疑同一物理行 4K aliasing / 存储转发伪依赖），仍待用 §5.7 topdown + perf record 收尾
+- ✅ Reactor 模型是什么（2026-07-12，§12.2 疑问）：Reactor 是事件驱动服务器模式——一个或少量 event loop 通过 select/poll/epoll 等 demultiplexer 等待 fd ready，拿到事件后分发给对应 handler；内核只通知“可读/可写/错误”等 readiness，真正 `accept/read/write` 由用户态 handler 执行。它和 Proactor 的关键区别是 Reactor 收到的是“可以做 I/O”，Proactor 收到的是“I/O 已完成”。工程上 Nginx/Redis/libuv/Netty 都是 Reactor 思路的变体，核心坑是 handler 不能长时间阻塞，写路径要靠输出缓冲区和按需监听 `EPOLLOUT`。
+- ✅ 网络线程如何安全地把工作交给 worker（2026-07-26，§12.4 疑问）：one loop per thread 下不把裸 fd 或 loop 内部 `Buffer*` 交给业务 worker；I/O loop 先把输入解析成拥有独立生命周期的 `Request`，worker 只做计算/阻塞业务，再通过线程安全 completion queue 把结果和 `weak_ptr<Connection>` 投递回连接所属 loop，由 loop 校验对象仍存活且处于 connected 状态后执行 `send_in_loop`。`shared_ptr` 只解决生命周期、不让对象字段自动线程安全；如果采用 prethreaded blocking server 真要转交 fd，则必须用 `UniqueFd` move 完成独占所有权转移，原线程成功移交后不再 read/write/close。
 
 ---
 
@@ -222,3 +238,8 @@
 | 2026-07-01 | §10.11 疑问：二进制文件必须按字节数读（fread/read/rio_readn/ifstream.read），不能用按分隔符切的文本函数——0x0a/0x00 在二进制里只是普通数据 | fopen 记得带 `b`、ifstream 记得 `ios::binary`（Windows 上关 \r\n 转换）；`fread` 也会短读要靠返回值驱动；跨机器还要处理字节序 + 结构体 padding | 工程不手写二进制格式，交 Protobuf/FlatBuffers/Cap'n Proto 统一解决字节序·对齐·版本演进；`fwrite(&struct)` 直接落盘会把编译器填充字节写出，换架构即不兼容 |
 | 2026-06-29 | §9.13 重构：把单文件 summary 改成对标参考 mm 文档的多文件「内核虚拟内存说明书」（00-index + 01 地址空间/02 页表/03 缺页主线/04 demand paging+COW/05 rmap/06 回收swap/07 脏页回写/08 观测实验），ARM64 架构基准 + 6.x 内核，实验迁入 experiments/ | 架构基准选 ARM64 但实验在 x86 本机跑——核心 mm 路径(handle_mm_fault 往后)架构无关、同一份 mm/*.c，只有异常入口(el0_da vs exc_page_fault)/页表级数/PTE 位架构相关；参考文档基于 5.x(链表+mm_rb)，本文以 6.x maple tree/folio 为准并注演进；行号沿用参考会偏移、新增内容不编行号 | 图文用 ASCII 调用链(带 文件:函数 注释)+ Mermaid(关系图/分流决策/LRU 状态机)；每条机制配 /proc 观测点 + bpftrace/ftrace 追踪靶子 | 旧教程的 `vm_next`链表/`mm_rb`红黑树在 6.1+ 已被 maple tree(`mm->mm_mt`)单结构取代，照搬会编译不过；`page`≠`folio`(后者保证指向复合页头页)；段错误与正常换页同入口、只在查 VMA/查权限两关分流；读未初始化匿名页不分配实页(共享 ZERO_PAGE)；COW 复制在 `do_wp_page`、按单页、第一次写才发生 | 免 root 三件套量化内核行为：statm/stat 的 RSS·minflt·majflt、`/proc/vmstat` 的 pgfault/pgmajfault/pgsteal_direct、`/proc/<pid>/smaps` 的 Anon/Shared；进阶用 bpftrace/trace-cmd(需 root)在 `do_wp_page`/`handle_mm_fault` 下探针，把调用链从读源码想象变成亲眼触发 |
 | 2026-07-04 | 第 10 章 UDS 专题：UDS 是本机 IPC 正解（复用 socket API 但不进 TCP/IP 栈、按文件路径寻址）；SCM_RIGHTS 能在任意进程间传 fd（传的是打开文件表项这个内核对象、非数字），只依赖一条已连通的 AF_UNIX 连接 | 抽象命名空间的 addrlen 必须 `offsetof+1+strlen` 精确算，传 `sizeof(addr)` 会把尾随填零算进名字；传 fd 必带 ≥1 字节数据且 cmsg 只能用 `CMSG_*` 宏；`bind` 成功返回 0，别写成 `!bind`；`_exit` 不刷 stdio 缓冲，管道下丢日志（本专题第 3 次踩） | Docker/Postgres/systemd/Wayland/D-Bus 本机通信全走 UDS；nginx master/worker 与 privsep 靠传 fd 分发连接/委派特权；现代 C++ 无标准 socket，贴 syscall 就自己套 RAII(`Fd`/`UnixSocket`)，要异步/跨语言再上 Asio/Cap'n Proto-KJ/sdbus-c++ |
+| 2026-07-12 | §12.1：基于进程的并发服务器 = 父进程负责 `accept`，每个 `connfd` 交给一个子进程处理；进程隔离让模型简单可靠，但共享状态必须靠 IPC | 父子 fd 关闭规则最容易错：父关 `connfd`、子关 `listenfd`；`SIGCHLD` 不排队，回收子进程必须 `while waitpid(-1, WNOHANG)` | 早期 Apache prefork、PostgreSQL/OpenSSH 的多进程 worker、shell pipeline、systemd socket activation 都是 fork + fd + IPC 组合出来的工程形态 |
+| 2026-07-19 | §12.2：I/O 多路复用只通知 fd readiness，Reactor 再组织成“注册→等待→分发→handler 执行实际 I/O”的事件循环；select/poll 每轮全量提交与扫描，epoll 长期维护 interest set/ready list | ready 不等于有业务数据或 I/O 已完成；ET 必须 nonblocking 并把 accept/read/write 做到 `EAGAIN`；`EPOLLOUT` 只能在 outbuf 非空时按需开启，否则会 busy loop | Nginx/Redis/libuv 用少量 loop 管大量低活跃连接；Muduo one loop per thread 让每条连接固定归属一个 I/O loop，以单一所有权减少锁，重业务另交有界 worker pool并用 queue+eventfd 投递结果 |
+| 2026-07-19 | §12.3：线程把执行流与资源容器分开；同进程线程各有寄存器和栈，却共享地址空间与 fd table；thread-per-connection 用一个 detached worker 服务一个连接 | 不能传会被 accept 循环覆盖的 `&connfd`；创建成功后 main 也不能像 fork 版一样 `close(connfd)`，否则会关闭 worker 共享的同一 fd | `make demo` 让一个 worker 阻塞在延迟连接上时，其他 worker 仍及时回显；生产中通常用有界线程池或 Reactor + worker pool 控制线程、队列和背压 |
+| 2026-07-26 | §12.4-§12.5：同步正确性不是给每行补锁，而是围绕变量实例建立 identity、ownership、lifetime、invariant 和 happens-before；one loop per thread 用单连接单线程所有权主动缩小共享面 | atomic 只保证单次操作，不能自动维护 check-then-act；CV 必须等待受 mutex 保护的谓词；读者优先会饿死 writer、写者优先会饿死 reader，`std::shared_mutex` 也不承诺统一公平策略 | I/O loop + MPSC completion queue + `eventfd` 是 Reactor 跨线程回投的经典边界；SPSC 靠固定角色免 CAS，MPMC 先选 bounded mutex+CV，只有 profile 证明瓶颈后才考虑 per-slot sequence ring；公平读写锁用 FIFO 队列按 reader phase 放行 |
+| 2026-07-26 | §12.6-§12.7：多线程加速必须同时满足工作可并行、分块均衡和开销可控，并用 `S_p=T_1/T_p`、`E_p=S_p/p` 与 Amdahl 上限解释扩展曲线；线程安全最终是函数/API 的状态、所有权和调用时序契约 | 线程数不等于速度；单个方法线程安全不代表 check-then-act 安全；内部加锁也不自动可重入；返回静态对象的接口解锁后仍可能被下一次调用覆盖 | 计算任务用线程局部归约减少 atomic/cache-line 热点，并用 `perf stat` 区分串行比例、调度与带宽瓶颈；遗留 C API 优先改为显式 context、调用者缓冲区或锁内复制快照，跨模块统一锁顺序并避免锁内 callback |

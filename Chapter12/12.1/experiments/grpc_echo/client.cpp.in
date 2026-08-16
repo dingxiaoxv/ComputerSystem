@@ -1,0 +1,39 @@
+#include <grpcpp/grpcpp.h>
+
+#include <iostream>
+#include <memory>
+#include <string>
+
+#include "echo.grpc.pb.h"
+
+int main(int argc, char **argv) {
+  std::string target = "localhost:50051";
+  std::string message = "hello via gRPC";
+
+  if (argc >= 2) {
+    target = argv[1];
+  }
+  if (argc >= 3) {
+    message = argv[2];
+  }
+
+  auto channel = grpc::CreateChannel(target, grpc::InsecureChannelCredentials());
+  std::unique_ptr<csapp::ipc::EchoService::Stub> stub =
+      csapp::ipc::EchoService::NewStub(channel);
+
+  csapp::ipc::EchoRequest request;
+  request.set_message(message);
+
+  csapp::ipc::EchoReply reply;
+  grpc::ClientContext context;
+  grpc::Status status = stub->Echo(&context, request, &reply);
+
+  if (!status.ok()) {
+    std::cerr << "gRPC failed: " << status.error_code() << " "
+              << status.error_message() << std::endl;
+    return 1;
+  }
+
+  std::cout << "client received: " << reply.message() << std::endl;
+  return 0;
+}

@@ -82,6 +82,46 @@ balance_dirty_pages():                        [mm/page-writeback.c 行 1580]
 撞到 limit 时写进程同步睡在 `balance_dirty_pages` 里——这正是 §9.1-9.5 说的「`wchan` 卡在
 `balance_dirty_pages` = 被脏页限流」的代码出处。
 
+## 7.5.1 写进程为什么会显示 D 状态
+
+`write()` 进入内核态时还不是 `D`，它仍在 CPU 上跑 syscall 路径；只有当 writeback 子系统需要让当前 task 等待某个资源，并调用调度器睡眠时，`ps` 才可能显示 `D`。在脏页回写这条线上，常见来源有三层：
+
+```
+write()
+  ├── copy_from_user → page cache → mark_page_dirty     # 快路径：不 D
+  ├── balance_dirty_pages_ratelimited()
+  │     └── 脏页接近/超过 dirty limit → 当前写者被 throttle
+  ├── 等 page lock / writeback bit
+  │     └── 同一文件页正在回写或被锁 → wait_on_page_bit*()
+  └── fsync/O_SYNC/direct reclaim/文件系统 journal
+        └── 必须等 I/O 或事务推进 → io_schedule()/schedule()
+```
+
+观察点对应关系：
+
+| 现象 | 可能代码路径 | 含义 |
+|------|--------------|------|
+| `wchan=balance_dirty_pages` | `mm/page-writeback.c:balance_dirty_pages()` | 脏页水位限流，写入速率超过回写能力 |
+| `wchan=wait_on_page_bit` | `mm/filemap.c` 相关等待 | 目标 page 正在 writeback/locked，等页状态变化 |
+| 栈里有 `io_schedule` | 块 I/O 等待路径 | 当前 task 已把 I/O 发出，睡眠等完成回调唤醒 |
+| 栈里有 `jbd2_*`/`ext4_*`/`xfs_*` | 文件系统事务 / journal | 元数据或日志提交卡住 |
+| 栈里有 `nfs_*`/`fuse_*` | 网络/用户态文件系统 | 等远端 server 或 FUSE daemon |
+
+这里的 `D` 不是「进程在内核态」的同义词，而是调度状态：当前 task 处在不可中断睡眠等待点。CPU 仍会响应硬件中断、调度其他进程；只是这个写进程在等待的 I/O / 页锁 / 文件系统事件完成前，不会因为普通信号立刻返回用户态。
+
+🔧 排查时把本文件和 §8.4 连起来看：
+
+```bash
+PID=<pid>
+ps -o pid,ppid,state,stat,wchan:40,etime,cmd -p $PID
+sudo cat /proc/$PID/stack
+watch -n0.5 'grep -E "Dirty|Writeback" /proc/meminfo'
+vmstat 1
+iostat -xz 1
+```
+
+如果 `Dirty/Writeback` 高、`bo/wa` 高、`wchan` 卡在 `balance_dirty_pages` 或 `io_schedule`，就不是「应用 CPU 算慢」，而是 page cache/writeback/底层存储把写路径堵住了。
+
 🔧 **实测（[08 实验 5](08-observation-and-experiments.md)，`dirty_writeback.c`，x86 32GB/NVMe）**：
 持续写 12GB 不 fsync——起步 ~6000 MB/s（纯 page cache 吸收、Dirty 线性涨）→ ~1GB 处吞吐腰斩到 ~3000 MB/s
 （balance_dirty_pages 软节流）→ ~2GB 后 Writeback 转非 0（flusher 介入）、Dirty 稳在 ~2.2-3.1GB 平台不再涨。

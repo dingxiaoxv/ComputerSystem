@@ -63,6 +63,102 @@ if ((pid = fork()) < 0) {
 - **终止（Terminated）**：永久停止。三种原因：① 收到默认行为是终止的信号；② 从 `main` 返回；③ 调用 `exit`。
 - **僵尸（Zombie）**：已终止但还没被父进程回收——见下文 §8.4.3。
 
+🔧 **Linux 里怎么查看进程状态**：CSAPP 这里讲的是抽象状态，Linux `ps` 会把状态拆得更细。常用命令：
+
+```bash
+# 看一个进程
+ps -o pid,ppid,state,stat,wchan,cmd -p <pid>
+
+# 看某个父进程的所有子进程，排查并发服务器/简易 shell 很有用
+ps -o pid,ppid,state,stat,wchan,cmd --ppid <parent-pid>
+
+# 找僵尸进程
+ps -eo pid,ppid,stat,cmd | grep ' Z'
+ps aux | grep defunct
+
+# /proc 视角：State 行就是主状态
+cat /proc/<pid>/status
+```
+
+`state` 是单字符主状态，`stat` 是主状态 + 附加标记，`wchan` 表示进程如果在睡眠，大致睡在哪个内核等待点。
+
+🎯 **`ps STAT` 常见主状态**：
+
+| 状态 | 名称 | 含义 | 典型场景 |
+|------|------|------|----------|
+| `R` | Running / Runnable | 正在 CPU 上运行，或已就绪、在 run queue 等 CPU | CPU 密集程序、刚被唤醒等待调度 |
+| `S` | Interruptible sleep | 可中断睡眠，正在等某个事件，能被信号唤醒 | `sleep()`、等待终端输入、阻塞在 `accept`/`read` 等普通等待 |
+| `D` | Uninterruptible sleep | 不可中断睡眠，通常在内核里等 I/O 或某个不能安全中断的资源 | 磁盘 I/O、NFS/块设备/驱动卡住；`kill -9` 也要等它离开该等待点后才生效 |
+| `T` | Stopped | 被作业控制信号停止 | `Ctrl-Z`、`SIGSTOP`、`SIGTSTP` |
+| `t` | Tracing stop | 被调试器/追踪器暂停 | `gdb`、`strace -p` 附着 |
+| `Z` | Zombie | 已经退出，但父进程尚未 `wait`/`waitpid` 回收 | 子进程结束，父进程没处理 `SIGCHLD` 或没调用 `waitpid` |
+| `I` | Idle kernel thread | 空闲内核线程 | 内核线程，普通用户进程一般不用关心 |
+
+⚠️ **`D` 里的 “uninterruptible” 不是 §8.1 的硬件中断 interrupt**：它说的是进程处在一种**不会被普通信号打断的内核等待状态**，不是说 CPU 不响应时钟/网卡/磁盘中断。硬件中断仍然会发生；只是这个进程暂时不会因为 `SIGTERM`/`SIGKILL` 立刻返回用户态处理死亡。
+
+🔧 **看到 `D` 状态怎么排障**：`D` 的排障主线不是先看应用日志，而是先查「这个进程在内核里等什么资源」。推荐按下面顺序走：
+
+```bash
+PID=<pid>
+
+# 1. 确认状态、卡了多久、睡在哪个内核等待点
+ps -o pid,ppid,state,stat,wchan:40,etime,cmd -p $PID
+grep -E 'Name|Pid|PPid|State' /proc/$PID/status
+cat /proc/$PID/wchan
+
+# 2. 看内核栈：比 wchan 更有用，通常需要 root
+sudo cat /proc/$PID/stack
+
+# 3. 看进程可能在访问什么文件/目录/fd
+readlink -f /proc/$PID/cwd
+ls -l /proc/$PID/fd
+
+# 4. 找对应挂载点和文件系统类型
+findmnt -T "$(readlink -f /proc/$PID/cwd)"
+
+# 5. 判断是不是系统性问题：全系统有多少 D 进程
+ps -eo pid,ppid,state,stat,wchan:32,cmd | awk '$3 == "D"'
+
+# 6. 看内核日志和 I/O 指标
+dmesg -T | grep -Ei 'blocked|hung|I/O error|timeout|reset|nvme|ata|scsi|ext4|xfs|nfs|fuse'
+iostat -xz 1
+pidstat -d -p $PID 1
+```
+
+🎯 **按 `wchan` / 内核栈快速判断方向**：
+
+| 线索 | 大致方向 | 下一步 |
+|------|----------|--------|
+| `io_schedule`、`wait_on_page_bit` | 块设备 I/O 或 page cache 读写没回来 | 看 `iostat -xz 1`、`dmesg`、`lsblk -f`、磁盘/NVMe SMART |
+| `blk_mq_get_tag` | 块层队列资源紧张或设备响应慢 | 看设备队列、`await`、`aqu-sz`、驱动/固件日志 |
+| `nfs_*`、`rpc_*` | NFS / 网络文件系统卡住 | 看 `findmnt`、`nfsstat -m`、网络、NFS server 日志 |
+| `fuse_*` | FUSE/sshfs 等用户态文件系统卡住 | 查 FUSE daemon 是否还活着、远端网络是否正常 |
+| `ext4_*`、`xfs_*`、`jbd2_*` | 本地文件系统或 journal 等待 | 看 `dmesg` 是否有文件系统错误，必要时安排维护窗口检查 |
+
+⚠️ **不要反复 `kill -9`**：`SIGKILL` 会挂成 pending，但 `D` 状态进程要等内核等待点返回后才会真正退出。如果底层 I/O/NFS/驱动永远不返回，反复 kill 没意义。正确方向是恢复或隔离它等待的底层资源：修磁盘、恢复 NFS server、修网络、处理 FUSE daemon、排查文件系统/驱动问题；最后手段才是重启机器。
+
+⚠️ **大量 `D` 会抬高 load average**：load average 统计的是 runnable + uninterruptible sleep 这类任务数，所以可能出现「load 很高但 CPU 不高」的现象。这通常不是 CPU 忙，而是 I/O 或内核等待堆积。
+
+🎯 **`ps STAT` 常见附加标记**：
+
+| 标记 | 含义 | 例子 |
+|------|------|------|
+| `s` | session leader，会话首进程 | `Ss` 常见于 shell/daemon |
+| `l` | 多线程进程 | `Sl` 常见于多线程服务 |
+| `+` | 前台进程组 | `S+` 表示正在前台等待 |
+| `<` | 高优先级 | 实时/高优先级任务可能出现 |
+| `N` | 低优先级，nice 值较大 | 被 `nice` 降优先级的任务 |
+| `L` | 有页面锁在内存里 | 使用 `mlock` 或某些实时场景 |
+
+🔧 **CSAPP 抽象状态和 Linux 状态的对应关系**：
+
+| CSAPP 抽象状态 | Linux 常见显示 |
+|----------------|----------------|
+| Running | `R`，广义上包括正在运行和就绪等待调度 |
+| Stopped | `T` / `t` |
+| Terminated | 终止瞬间很短，通常看不到；如果父进程未回收就表现为 `Z` |
+| Zombie | `Z` / `<defunct>` |
+
 🎯 **`exit` 与退出状态**：
 ```c
 void exit(int status);   // status 的低 8 位是退出状态，0 表示成功

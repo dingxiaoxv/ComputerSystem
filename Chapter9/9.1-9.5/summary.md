@@ -616,6 +616,102 @@ cat /proc/sys/vm/dirty_ratio      # 脏页占比超过阈值，写进程被强�
 
 ---
 
+## 文件 I/O、page cache 与 D 状态
+
+这一节把 §8.4 的进程状态和 §9.3 的 page cache / 脏页机制接起来：**进程进入内核态不等于进入 `D` 状态；只有当内核路径需要等待 I/O、page lock、writeback、文件系统事务等资源，并把任务置为不可中断睡眠时，`ps` 才会看到 `D`。**
+
+**🎯 `write()` 快路径：通常只是弄脏 page cache，不会 D**
+
+普通 buffered write 的理想路径是：
+
+```text
+用户态 write(fd, buf, len)
+  └─ syscall/trap 进入内核态
+      ├─ copy_from_user(buf → page cache)
+      ├─ mark page dirty
+      └─ return 用户态
+```
+
+这里进程只是在内核态执行系统调用处理代码，调度状态仍是 runnable/running；它不需要睡眠等待，所以不会因为“进入内核态”自动变成 `D`。第 8 章的状态和这里的特权级是两条不同轴：
+
+```text
+用户态 / 内核态：CPU 当前在哪个特权级执行
+R / S / D / Z：调度器视角下 task 是否可运行、睡眠、僵尸
+```
+
+**🎯 `read()` 为什么可能 D：page cache miss 和 major fault**
+
+读普通文件时，如果目标页已经在 page cache，内核直接拷贝返回；如果不在，就要从磁盘/网络文件系统把页读进 page cache。这个 major fault / 文件读入路径可能让进程等待 I/O：
+
+```text
+read() / file-backed mmap load
+  ├─ page cache hit  → 纯内存路径，通常不阻塞
+  └─ page cache miss → 提交读 I/O → 等待页变 Uptodate → 可能 D
+```
+
+排障时常在 `wchan` 或 `/proc/<pid>/stack` 里看到 `wait_on_page_bit`、`filemap_read`、`io_schedule` 等线索。
+
+**🎯 `write()` 为什么可能 D：page cache 快路径之外的等待**
+
+“写文件先写 page cache”不是“写永远不等磁盘”。真实写路径在这些情况下可能进入 `D`：
+
+| 触发点 | 为什么会等 | 常见线索 |
+|--------|------------|----------|
+| 脏页超过 `vm.dirty_ratio` | 回写跟不上写入，`balance_dirty_pages()` 让写进程同步限流 | `wchan=balance_dirty_pages`、`Dirty` 高 |
+| 目标页正在 writeback 或被锁 | 不能同时安全修改同一页，需等 page lock / writeback bit 清掉 | `wait_on_page_bit`、`io_schedule` |
+| `fsync` / `fdatasync` / `O_SYNC` | 应用要求数据或元数据真正提交到后备存储 | 栈里有 `vfs_fsync`、`filemap_write_and_wait`、文件系统 journal 函数 |
+| `O_DIRECT` | 绕过 page cache，直接等块设备 I/O 生命周期推进 | 栈里有 direct I/O、block layer 函数 |
+| 元数据 / journal | 文件扩展、分配 block、提交 ext4/xfs 事务需要等待 | `jbd2_*`、`ext4_*`、`xfs_*` |
+| 内存压力 / direct reclaim | 为 page cache 分配页或回收页时被迫写回脏页 | `shrink_node`、`try_to_free_pages`、`balance_dirty_pages` |
+| NFS / FUSE / 网络文件系统 | 后端 server 或用户态 daemon 不响应 | `nfs_*`、`rpc_*`、`fuse_*` |
+
+所以正确心智模型是：
+
+```text
+page cache 让普通写入“不必每次等磁盘”；
+但脏页水位、页锁、同步语义、direct I/O、文件系统元数据、内存回收和远端文件系统，都会把写路径重新拉回等待 I/O 的世界。
+```
+
+**🔧 怎么从 VM 指标验证 D 状态和 page cache / writeback 有关**
+
+```bash
+PID=<pid>
+
+# 1. 看进程状态和等待点
+ps -o pid,ppid,state,stat,wchan:40,etime,cmd -p $PID
+sudo cat /proc/$PID/stack
+
+# 2. 看系统脏页和正在回写的页
+grep -E '^(Dirty|Writeback|NFS_Unstable|WritebackTmp):' /proc/meminfo
+grep -E 'nr_dirty|nr_writeback|nr_written|dirty_threshold' /proc/vmstat
+
+# 3. 看 I/O 是否被打满
+vmstat 1                 # wa、bi、bo
+iostat -xz 1             # await、w_await、aqu-sz、%util
+pidstat -d -p $PID 1     # 进程级读写速率
+
+# 4. 看文件到底在哪个后端上
+readlink -f /proc/$PID/cwd
+findmnt -T "$(readlink -f /proc/$PID/cwd)"
+ls -l /proc/$PID/fd
+```
+
+判读口诀：
+
+- `Dirty` 高但 `Writeback` 低：写入在堆积，后台回写可能没跟上或还没触发。
+- `Dirty` 高、`Writeback` 高、`wchan=balance_dirty_pages`：写进程被脏页限流。
+- `Writeback` 高、`iostat await/%util` 高：底层设备或文件系统回写慢。
+- `wchan=nfs_*` / `fuse_*`：不是本地磁盘问题，先查挂载点、网络、远端服务或 FUSE daemon。
+
+**⚠️ 易错点**
+
+- “`write()` 只写 page cache”是**快路径**，不是永不阻塞的保证。
+- `D` 状态不是“进程进入内核态”，而是“进程在内核里睡眠等待不可中断资源”。
+- `iotop` 里看到 `kworker/flush-*` 写很多，不代表 kworker 是元凶；它只是替制造脏页的进程回写，真凶要用 `pidstat -d`、`/proc/<pid>/io`、`cachetop` 或 cgroup `memory.stat` 找。
+- load average 高但 CPU 不高时，别只查 CPU；大量 `D` + `Dirty/Writeback` 高通常说明系统卡在 I/O / writeback。
+
+---
+
 ## 虚拟内存作为内存管理工具（§9.4）
 
 VM 的第二重身份：操作系统给**每个进程一套独立的页表**，于是每个进程都拥有一份从 0 开始、布局一致的私有虚拟地址空间。这一个设计同时简化了四件原本很棘手的事——记忆口诀是"**链接、加载、共享、分配**"。

@@ -10,7 +10,118 @@
 
 ---
 
-## 1. 一句话：TCP 和 UDP 的根本区别
+## 1. 分析原理泳道图：先看流程，再看细节
+
+**🎯 总原则：先定位责任边界，再下结论**
+
+网络排障不要把所有现象都归到「TCP 有问题」或「服务端有问题」。更稳的做法是把一次请求拆成几条泳道：客户端应用、DNS/解析路径、本机 TCP/IP 栈、对端 TCP/IP 栈/网关、服务端应用/代理。每一步只回答一个问题：这一层有没有把责任交到下一层。
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant U as 用户现象
+    participant App as 客户端应用
+    participant DNS as DNS/解析路径
+    participant K as 本机 TCP/IP 栈
+    participant Peer as 对端 TCP/IP 栈/网关
+    participant Svc as 服务端应用/代理
+    participant C as 分析结论
+
+    U->>App: curl 超时 / 连接失败 / 返回异常
+    App->>DNS: 解析域名
+    DNS-->>App: 返回目标 IP
+    alt IP 异常或落到保留/代理网段
+        DNS->>C: DNS 污染、代理、VPN、split DNS、公司网关
+    else IP 符合预期
+        App->>K: connect(IP:port)
+        K->>Peer: SYN
+        alt 无 SYN-ACK
+            K->>C: 路由、防火墙、对端不可达、端口被静默丢弃
+        else 收到 RST
+            Peer->>C: 主机可达，但端口未监听或策略拒绝
+        else 收到 SYN-ACK
+            Peer-->>K: SYN-ACK
+            K->>Peer: ACK，三次握手完成
+            App->>K: write HTTP/TLS payload
+            K->>Peer: PSH/ACK，seq x:y
+            alt payload 未被 ACK
+                K->>C: 请求段丢失、回程 ACK 丢失、窗口或路径问题
+            else payload 被 ACK
+                Peer-->>K: ACK y
+                Peer->>Svc: 请求字节进入对端处理链路
+                alt 收到响应 payload
+                    Svc-->>App: 返回响应数据
+                    App->>C: 继续分析状态码、协议内容、性能和重传
+                else 长时间没有响应 payload
+                    Svc-->>App: 无响应，客户端最终超时
+                    App->>C: 应用响应链路、代理、网关或服务端逻辑异常
+                end
+            end
+        end
+    end
+```
+
+**🎯 本机样本的泳道图**
+
+把本文抓包套进泳道图，结论链很清楚：DNS 返回保留地址段 → TCP 三次握手完成 → HTTP GET 已发送 → 服务端 ACK 了请求 → 15 秒没有响应 body → `curl` 超时。
+
+```mermaid
+sequenceDiagram
+    participant U as 用户现象
+    participant App as curl
+    participant DNS as DNS/解析路径
+    participant K as 本机 TCP/IP 栈
+    participant GW as 198.18.0.156 网关/服务端
+    participant C as 分析结论
+
+    U->>App: curl http://neverssl.com/ 超时
+    App->>DNS: 查询 neverssl.com / example.org
+    DNS-->>App: 返回 198.18.0.156 / 198.18.0.157
+    DNS->>C: 198.18.0.0/15 是保留测试网段，解析路径已被改写
+    App->>K: connect(198.18.0.156:80)
+    K->>GW: SYN
+    GW-->>K: SYN-ACK
+    K->>GW: ACK，三次握手完成
+    App->>K: 写出 HTTP GET，length 75
+    K->>GW: PSH+ACK，seq 1:76
+    GW-->>K: ACK 76
+    K->>App: 请求字节已被对端 TCP 栈确认
+    GW-->>App: 15 秒内没有 HTTP 响应 body
+    App->>U: curl: Operation timed out
+    C->>U: 不是 TCP 连不上，而是应用响应链路异常
+```
+
+**🎯 读 seq/ack 的局部判断流程**
+
+TCP 分析时最容易混淆的是「包」和「字节」。读 `seq/ack` 时只盯一个问题：**字节序号有没有推进，ACK 是否确认了前面连续收到的字节**。
+
+```mermaid
+flowchart TD
+    A[看到一个 TCP 段] --> B{是否带 SYN 或 FIN?}
+    B -- 是 --> C[SYN/FIN 不带应用数据也占 1 个序列号]
+    B -- 否 --> D[看 payload length]
+    C --> E[计算下一个 seq = 当前 seq + length + SYN/FIN 占用]
+    D --> E
+    E --> F{对端 ack 是否等于下一个 seq?}
+    F -- 是 --> G[该方向字节已被连续确认]
+    F -- 小于预期 --> H[ACK 没推进：可能丢包、乱序、对端未收到、窗口问题]
+    F -- 重复多次相同 ack --> I[可能存在中间空洞，关注 Dup ACK / 快速重传]
+    G --> J{是否有新的响应数据?}
+    J -- 有 --> K2[继续按反方向 seq/ack 分析]
+    J -- 无 --> L[若长时间无数据，转向应用层或服务端处理链路]
+```
+
+**🔧 工程用法：把泳道图变成排障 checklist**
+
+- 先记录「域名最终解析到哪个 IP」，尤其要识别 `198.18.0.0/15`、内网地址、代理地址这类环境线索。
+- 再看三次握手，不要在没有 SYN/SYN-ACK/ACK 证据时直接说「服务端慢」。
+- 握手成功后，重点看应用 payload 是否发出、是否被 ACK；被 ACK 说明至少到达了对端 TCP 栈。
+- 请求被 ACK 但没有响应时，优先查应用层、代理层、网关层和服务端日志，而不是继续纠结 TCP 建连。
+- 看到 bad checksum 时先考虑 checksum offload；看到重复 `seq` / 重复 `ack` 时再进入重传和丢包分析。
+
+---
+
+## 2. 一句话：TCP 和 UDP 的根本区别
 
 **🎯 同样跑在 IP 上，抽象完全不同**
 
@@ -50,7 +161,7 @@ IP 头：加源/目的 IP，定位到主机
 
 ---
 
-## 2. 协议数据：一包里到底有什么
+## 3. 协议数据：一包里到底有什么
 
 **🎯 IP 头先决定「送到哪台机器」**
 
@@ -139,7 +250,7 @@ UDP 后面立刻就是 DNS 数据：
 
 ---
 
-## 3. TCP 三次握手：建立的是双方的序列号空间
+## 4. TCP 三次握手：建立的是双方的序列号空间
 
 **🎯 真实抓包**
 
@@ -194,7 +305,7 @@ SYN/SYN-ACK 里的选项很关键：
 
 ---
 
-## 4. TCP 数据传输：可靠性靠 seq/ack 推进
+## 5. TCP 数据传输：可靠性靠 seq/ack 推进
 
 **🎯 真实 HTTP 请求段**
 
@@ -265,7 +376,7 @@ curl: (28) Operation timed out after 15002 milliseconds with 0 bytes received
 
 ---
 
-## 5. TCP 挥手：FIN 也占一个序列号
+## 6. TCP 挥手：FIN 也占一个序列号
 
 **🎯 真实抓包**
 
@@ -301,7 +412,7 @@ seq 77, ack 2, length 0
 
 ---
 
-## 6. UDP：无连接，但不是「没有协议」
+## 7. UDP：无连接，但不是「没有协议」
 
 **🎯 DNS 查询的一问一答**
 
@@ -349,7 +460,8 @@ QUIC 则更进一步：直接在 UDP payload 里自己实现连接 ID、丢包�
 
 ---
 
-## 7. tcpdump 怎么看：从命令到结论
+
+## 8. tcpdump 怎么看：从命令到结论
 
 **🎯 三个基础命令**
 
@@ -419,7 +531,7 @@ Warning: interface names might be incorrect
 
 ---
 
-## 8. TCP 重传：这次实验没命中，但该怎么看
+## 9. TCP 重传：这次实验没命中，但该怎么看
 
 **🎯 这次 netem 实验结果**
 
@@ -474,7 +586,7 @@ sudo tcpdump -nnvv -r /tmp/retx-big.pcap | grep -E 'seq|ack'
 
 ---
 
-## 9. 易错点
+## 10. 易错点
 
 - 误以为 TCP 是「消息流」→ TCP 是字节流，应用必须自己设计边界。
 - 误以为 ACK 确认的是「包」→ ACK 确认的是字节序号，`ack=N` 表示 N 之前的字节已连续收到。
@@ -486,7 +598,7 @@ sudo tcpdump -nnvv -r /tmp/retx-big.pcap | grep -E 'seq|ack'
 
 ---
 
-## 10. 工程关联
+## 11. 工程关联
 
 - **Linux socket API**：UDP 常用 `sendto`/`recvfrom`，TCP 常用 `connect`/`accept` 后 `read`/`write`；但二者在内核里对应完全不同的传输语义。
 - **RIO 的必要性**：TCP 没有消息边界且可能 short count，CSAPP 的 `rio_readn`/`rio_readlineb` 正是把字节流重新组织成应用可处理的单位。
@@ -497,7 +609,7 @@ sudo tcpdump -nnvv -r /tmp/retx-big.pcap | grep -E 'seq|ack'
 
 ---
 
-## 11. 实验题
+## 12. 实验题
 
 **🧪 题 1：复现本文抓包并手工解释 seq/ack**
 

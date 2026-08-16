@@ -23,6 +23,13 @@ Chapter8/8.3-8.4/shell/tsh
 # §8.5-8.6 实验二进制
 Chapter8/8.5-8.6/shell/tsh
 
+# §3.11 浮点汇编实验产物（*.s 已被全局忽略）
+Chapter3/3.11/experiments/negzero
+
+# §9.11 内存错误实验二进制
+Chapter9/9.11/experiments/mem_errors
+Chapter9/9.11/experiments/mem_errors_asan
+
 # §9.1-9.5 实验二进制和测试数据
 Chapter9/9.1-9.5/locality/locality
 Chapter9/9.1-9.5/paging/major

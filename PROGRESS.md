@@ -8,10 +8,10 @@
 
 | 项目 | 内容 |
 |------|------|
-| 当前章节 | 全书主线已走完，总结收口于 [BOOK_SUMMARY.md](BOOK_SUMMARY.md) |
-| 已完成天数 | 第 1 章、第 2 章 §2.1-2.4、第 3 章 §3.1-3.10、第 5 章 §5.1-5.14、第 6 章 §6.1-6.6、第 7 章全章、第 8 章 §8.1-8.7、第 9 章 §9.1-9.10 + §9.13、第 10 章 §10.1-10.12、第 11 章 §11.1-11.6、第 12 章 §12.1-12.7 |
+| 当前章节 | **全书读完** ✅，总结收口于 [BOOK_SUMMARY.md](BOOK_SUMMARY.md) |
+| 已完成天数 | 第 1 章、第 2 章 §2.1-2.4、第 3 章 §3.1-3.11、第 5 章 §5.1-5.14、第 6 章 §6.1-6.6、第 7 章全章、第 8 章 §8.1-8.7、第 9 章 §9.1-9.11 + §9.13、第 10 章 §10.1-10.12、第 11 章 §11.1-11.6、第 12 章 §12.1-12.7 |
 | 上次学习 | 2026-08-16 |
-| 下一步 | 只剩两处正文待补：**§3.11 浮点代码**、**§9.11 常见的与内存有关的错误**；各章小结（§2.5/§3.12/§5.15/§6.7/§8.8/§9.12/§12.8）已由 [BOOK_SUMMARY.md](BOOK_SUMMARY.md) 统一收口；第 4 章按计划跳过不记笔记 |
+| 下一步 | 正文无缺口。各章小结（§2.5/§3.12/§5.15/§6.7/§8.8/§9.12/§12.8）由 [BOOK_SUMMARY.md](BOOK_SUMMARY.md) 统一收口；第 4 章按计划跳过不记笔记。后续可选：零页别名的微架构定量归因（🟡 见遗留问题）、按验收七问做一轮自测 |
 
 > 2026-06-27：提前开第 6 章 §6.1 存储技术（Day 34），完成 [Chapter6/6.1/summary.md](Chapter6/6.1/summary.md)。
 > 2026-07-01：第 10 章整章总结收口于单文件 [Chapter10/summary.md](Chapter10/summary.md)（§10.1-10.12），含 RIO 实现、`shared.c`（fork 共享偏移量）、TSan 竞态实验；解答「二进制文件怎么读」疑问。
@@ -23,6 +23,7 @@
 > 2026-07-19：第 12 章 §12.3 完成于 [Chapter12/12.3/summary.md](Chapter12/12.3/summary.md)，代码在 [Chapter12/12.3/experiments](Chapter12/12.3/experiments)——梳理线程共享/私有资源、pthread 创建/终止/join/detach/once，并用教材 thread-per-connection echo server 串起参数所有权、共享 fd 关闭语义和线程资源上限。
 > 2026-07-26：第 12 章 §12.4-§12.5 完成于 [§12.4](Chapter12/12.4/summary.md) 与 [§12.5](Chapter12/12.5/summary.md)——从变量实例、所有权、生命周期、不变量与 happens-before 统一分析同步错误根因；重点解释 one loop per thread 如何用连接单线程所有权减少锁，并扩展 bounded blocking MPMC、SPSC/per-slot-sequence MPMC ring，以及读者优先、写者优先和 FIFO 分阶段无饥饿读写锁。
 > 2026-07-26：第 12 章 §12.6-§12.7 完成于 [§12.6](Chapter12/12.6/summary.md) 与 [§12.7](Chapter12/12.7/summary.md)——§12.6 用并行归约串起任务划分、speedup/efficiency、强弱扩展、Amdahl 上限和 Linux `perf stat` 测量；§12.7 从 API 契约梳理四类线程不安全函数、可重入性、遗留库封装、参数竞态与全局锁顺序。
+> 2026-08-16：补完最后两处正文缺口，**全书读完**。§3.11 完成于 [Chapter3/3.11/summary.md](Chapter3/3.11/summary.md)——浮点寄存器与 ss/sd/ps/pd 后缀、SSE2 与 AVX(VEX) 编码对比、浮点参数独立计数与「没有 callee-saved 的 %xmm」、转换指令的截断语义、符号操作的位掩码实现与 -0.0 陷阱、comisd/ucomisd 的 PF 无序标志、常数只能从 .rodata 加载；代码在 `Chapter3/3.11/experiments/`。§9.11 完成于 [Chapter9/9.11/summary.md](Chapter9/9.11/summary.md)——十类内存错误逐个触发并用 ASan/Valgrind/编译器警告三方交叉验证，产出工具能力边界对照表；代码在 `Chapter9/9.11/experiments/`。
 > 2026-08-16：产出全书总结 [BOOK_SUMMARY.md](BOOK_SUMMARY.md)，一次性收口书中全部小结小节（§2.5/§3.12/§5.15/§6.7/§8.8/§9.12/§12.8）——含「一个程序的一生」主线图、逐章骨干与必记易错点、四条跨章纵向主线（性能定位顺序 / 一个地址的完整旅程 / 控制流突变四层次 / 边界与所有权）、一张延迟速查表（含本机实测 L1≈4·L2≈14·L3≈40·DRAM≈300+ cycle）以及验收标准七问的标准答案。同步修正 PROGRESS 中第 2、3、5、6、8、9、12 章过时的状态标记。
 
 ---
@@ -75,7 +76,7 @@
 | Day 27 | 3.9-3.9.3 | ✅ | [Chapter3/3.9/summary.md](Chapter3/3.9/summary.md) |
 | Day 28 | 3.10-3.10.3 | ✅ | [Chapter3/3.10/summary.md](Chapter3/3.10/summary.md) |
 | Day 29 | 3.10.4-3.10.5 栈保护、变长栈帧 | ✅ | [Chapter3/3.10/summary.md](Chapter3/3.10/summary.md) |
-| Day 30 | **3.11 浮点代码** | ⬜ | **待补**（AVX2、`%xmm`、浮点参数传递与比较） |
+| Day 30 | 3.11 浮点代码 | ✅ | [Chapter3/3.11/summary.md](Chapter3/3.11/summary.md)；[experiments](Chapter3/3.11/experiments) |
 | — | 3.12 小结 | ✅ | [BOOK_SUMMARY.md](BOOK_SUMMARY.md) 收口 |
 
 ### 第 4 章：处理器体系结构 ⏭️
@@ -117,7 +118,7 @@
 | Day 45 | 9.7 | ✅ | [Chapter9/9.7-9.8/summary.md](Chapter9/9.7-9.8/summary.md) |
 | Day 46 | 9.8-9.8.4 | ✅ | [Chapter9/9.7-9.8/summary.md](Chapter9/9.7-9.8/summary.md) |
 | Day 47 | 9.9-9.10 | ✅ | [Chapter9/9.9-9.10/summary.md](Chapter9/9.9-9.10/summary.md) |
-| Day 47 | **9.11 常见的与内存有关的错误** | ⬜ | **待补**（实验代码已在 `Chapter9/9.9-9.10/expirements/`） |
+| Day 47 | 9.11 常见的与内存有关的错误 | ✅ | [Chapter9/9.11/summary.md](Chapter9/9.11/summary.md)；[experiments](Chapter9/9.11/experiments) |
 | — | 9.12 小结 | ✅ | [BOOK_SUMMARY.md](BOOK_SUMMARY.md) 收口 |
 | 补充 | 9.13 内核虚拟内存说明书（ARM64/6.x，多文件） | ✅ | [9.13-kernel-vm-source](Chapter9/kernel-vm-source/00-index.md) |
 | 补充 | zswap：512MB 小内存机器的 swap 参数与优化 | ✅ | [Chapter9/zswap.md](Chapter9/zswap.md) |
@@ -198,6 +199,8 @@
 | 2026-07-12 | §12.1 | [Chapter12/12.1/experiments](Chapter12/12.1/experiments)；[Chapter12/12.1/summary.md](Chapter12/12.1/summary.md) | 基于进程的并发 echo 服务器 + 典型 IPC 例程：`make process-echo` 验证 fork-per-connection，`make ipc` 跑通 UDS/`mmap`/`eventfd`，另补 `grpc_echo/` 可选 gRPC 示例 | 父进程只保留 `listenfd` 并关闭 `connfd`，子进程关闭 `listenfd` 后服务当前连接；`SIGCHLD` handler 必须 `while waitpid(-1, WNOHANG)` 收干净僵尸；IPC 选择核心看本机控制面(UDS)、大块共享数据(`mmap`)、事件通知(`eventfd`)还是跨语言/跨机器服务接口(gRPC) |
 | 2026-07-12 | §12.2 | [Chapter12/12.2/experiments](Chapter12/12.2/experiments)；[select](Chapter12/12.2/select.md)；[poll](Chapter12/12.2/poll.md)；[epoll](Chapter12/12.2/epoll.md)；[summary](Chapter12/12.2/summary.md) | `make clean all` 编译四个 server，`make demo` 依次跑 select/poll/epoll LT 并校验两条顺序回显；另有 `epoll_et_echo_server.c` 展示 nonblocking ET、accept/read 到 `EAGAIN`、输出缓冲和按需 `EPOLLOUT`，不在自动 demo 中 | 三者业务相同但等待机制不同：select 每轮复制/修改 `fd_set` 且受 `FD_SETSIZE` 约束；poll 分离 `events/revents` 但仍线性扫描；epoll 长期保存 interest set 并返回 ready event；基础 server 用单次 `read` 避免半行阻塞，但阻塞写仍非生产级，ET 版才补齐 drain、短写和背压边界 |
 | 2026-07-19 | §12.3 | [Chapter12/12.3/experiments](Chapter12/12.3/experiments)；[summary](Chapter12/12.3/summary.md) | 实现教材 thread-per-connection echo server；`make clean all` 无新源码警告，`make demo` 先让一条连接延迟 2 秒发送，再用两个 2 秒超时客户端验证并发回显，并重复运行确认不遗留监听进程 | 每个 `connfd` 必须有独立堆参数；`pthread_create` 成功是所有权转移点，失败由 main `free+close`，成功后由 detached worker `free+echo+close`；线程共享 fd table，所以 main 不能照搬 fork 版提前关闭 `connfd` |
+| 2026-08-16 | §3.11 | [Chapter3/3.11/experiments](Chapter3/3.11/experiments)（`fp_asm.c`·`negzero.c`·`vararg.c`）；[summary](Chapter3/3.11/summary.md) | `make asm` 生成 -Og/-O2 汇编逐条对照；`make avx` 对比 SSE2 与 VEX 机器码；`make rodata` dump 常数池；`make negzero` 实测 -0.0/NaN 行为；`make vararg` 验证变参 %al 与 xmm 溢出 | 默认基线生成 SSE2 两操作数 `addsd`（`f2 0f 58 c1`），`-mavx2` 才是三操作数 `vaddsd`（`c5 fb 58 c1`），同为 4 字节；**16 个 %xmm 全是 caller-saved**——`keep()` 必须 `movsd %xmm0,8(%rsp)` 跨调用保活，而整数版 `keep_int()` 只需 `pushq %rbx`；`fp_abs(-0.0)` 返回 `0x8000000000000000`、`fp_fabs(-0.0)` 返回 `0x0`，正是编译器不敢把三目优化成 `andpd` 的原因；常数池实测 `.LC0`=符号掩码、`.LC2`=绝对值掩码、`.LC3`=3.14、`.LC4`=1.0，两个掩码当 double 解释恰好是 -0.0 和 NaN |
+| 2026-08-16 | §9.11 | [Chapter9/9.11/experiments](Chapter9/9.11/experiments)（`mem_errors.c`）；[summary](Chapter9/9.11/summary.md) | 十类内存错误逐个触发，`make demo` 对比普通编译与 ASan，`make demo-stdin` 跑需输入的两类，`make vg-uninit` 展示 ASan 盲区；另用 valgrind 逐类交叉验证 | **十类里有四类退出码为 0**（uninit/offbyone/ptr_arith/leak）——普通编译下完全无感；崩溃点≠错误点：`sizeof` 算错在第 59 行越界写，却崩在第 61 行 `free` 的 glibc 堆断言；工具边界实测坐实——**ASan 抓不到读未初始化内存**（完全静默，需 valgrind `--track-origins` 追溯到分配点），**valgrind 抓不到栈缓冲区溢出**（只有 canary 兜住），**界内指针错位两者都抓不到**；ASan 与 valgrind 报泄漏数一致（5120 字节 / 2 块） |
 | 2026-07-26 | §12.4-§12.5 | [§12.4 summary](Chapter12/12.4/summary.md)；[§12.5 summary](Chapter12/12.5/summary.md) | 以变量引用图、进度图和 C++20 示例推导共享变量、happens-before、semaphore/CV、同步错误分类；拓展 one loop per thread、SPSC/MPMC ring 和三种读写锁，并对核心类做 `g++ -std=c++20 -Wall -Wextra -Wpedantic -pthread -fsyntax-only` 检查 | 同步正确性的核心是给 identity/ownership/lifetime/invariant/ordering 建立完整协议；one loop per thread 以连接单线程所有权缩小共享面；读者/写者偏好只能避免一侧饥饿，要靠 FIFO 到达顺序加 reader phase 才能让已入队的两侧请求都不被无限超越 |
 
 ---
@@ -206,9 +209,11 @@
 
 - 回填存量 summary 文档到 `CLAUDE.md` 新定义的标准格式 ✅（§3.6、§2.3、§3.4 全部完成）
 - 全书总结 [BOOK_SUMMARY.md](BOOK_SUMMARY.md) ✅（2026-08-16，收口全部小结小节）
-- ⬜ **§3.11 浮点代码**：AVX2/SSE 浮点汇编、`%xmm0-15` 传参与返回、`vcomisd` 浮点比较与分支、浮点常数的加载方式
-- ⬜ **§9.11 常见的与内存有关的错误**：间接引用坏指针、读未初始化内存、栈缓冲区溢出、指针运算把元素当字节、`free` 错误（重复/偏移/非堆地址）、内存泄漏；实验代码已在 `Chapter9/9.9-9.10/expirements/`（`leak`/`race`/`alloc`），配 ASan/Valgrind 验证
+- ✅ **§3.11 浮点代码**（2026-08-16）：[summary](Chapter3/3.11/summary.md) + [experiments](Chapter3/3.11/experiments)
+- ✅ **§9.11 常见的与内存有关的错误**（2026-08-16）：[summary](Chapter9/9.11/summary.md) + [experiments](Chapter9/9.11/experiments)
 - ⏭️ 第 4 章 处理器体系结构：按计划跳过，不记录笔记
+
+> **全书正文已无缺口。**
 
 ---
 
@@ -260,5 +265,7 @@
 | 2026-07-19 | §12.2：I/O 多路复用只通知 fd readiness，Reactor 再组织成“注册→等待→分发→handler 执行实际 I/O”的事件循环；select/poll 每轮全量提交与扫描，epoll 长期维护 interest set/ready list | ready 不等于有业务数据或 I/O 已完成；ET 必须 nonblocking 并把 accept/read/write 做到 `EAGAIN`；`EPOLLOUT` 只能在 outbuf 非空时按需开启，否则会 busy loop | Nginx/Redis/libuv 用少量 loop 管大量低活跃连接；Muduo one loop per thread 让每条连接固定归属一个 I/O loop，以单一所有权减少锁，重业务另交有界 worker pool并用 queue+eventfd 投递结果 |
 | 2026-07-19 | §12.3：线程把执行流与资源容器分开；同进程线程各有寄存器和栈，却共享地址空间与 fd table；thread-per-connection 用一个 detached worker 服务一个连接 | 不能传会被 accept 循环覆盖的 `&connfd`；创建成功后 main 也不能像 fork 版一样 `close(connfd)`，否则会关闭 worker 共享的同一 fd | `make demo` 让一个 worker 阻塞在延迟连接上时，其他 worker 仍及时回显；生产中通常用有界线程池或 Reactor + worker pool 控制线程、队列和背压 |
 | 2026-07-26 | §12.4-§12.5：同步正确性不是给每行补锁，而是围绕变量实例建立 identity、ownership、lifetime、invariant 和 happens-before；one loop per thread 用单连接单线程所有权主动缩小共享面 | atomic 只保证单次操作，不能自动维护 check-then-act；CV 必须等待受 mutex 保护的谓词；读者优先会饿死 writer、写者优先会饿死 reader，`std::shared_mutex` 也不承诺统一公平策略 | I/O loop + MPSC completion queue + `eventfd` 是 Reactor 跨线程回投的经典边界；SPSC 靠固定角色免 CAS，MPMC 先选 bounded mutex+CV，只有 profile 证明瓶颈后才考虑 per-slot sequence ring；公平读写锁用 FIFO 队列按 reader phase 放行 |
+| 2026-08-16 | §3.11：浮点是并行的另一套世界——独立的 %xmm 寄存器组、靠指令后缀（ss/sd/ps/pd）而非寄存器名区分宽度、独立的参数计数队列，IEEE 754 的语义（NaN 无序、-0.0、常数不可精确表示）逐条落到了指令上 | 全部 16 个 %xmm 都是 caller-saved，浮点值跨调用只能溢出到栈；`x<0?-x:x` 不等价于 `fabs(x)`（-0.0 行为不同）所以编译器不给 `andpd`；浮点比较要用 `ja`/`jb` 无符号跳转，判等必须同时看 PF 和 ZF 否则 `NaN==NaN` 为真 | 热点循环里全是 `addsd` 而非 `addpd` 说明向量化失败，用 `-fopt-info-vec-missed` 查原因；`-ffast-math` 的本质就是授权编译器做这些「语义不完全等价」的变换；`long double` 走的是完全不同的 x87 栈 |
+| 2026-08-16 | §9.11：内存错误最危险的不是它让程序崩溃，而是它经常不崩——实测十类错误里四类退出码为 0，且会崩的那几类崩溃点也不在错误点（堆越界要等下次 free 操作元数据才暴露） | 没有任何单一工具能抓全：ASan 抓不到读未初始化内存、valgrind 抓不到栈缓冲区溢出、界内指针错位两者都抓不到；`malloc` 不清零而 `calloc` 清零，「有时候读到 0」是巧合不是保证 | CI 用 `-fsanitize=address,undefined` 兜日常、valgrind `--track-origins` 线下深挖疑难、`-D_FORTIFY_SOURCE=2` 上生产；本节所有堆错误破坏的都是 §9.9 讲的分配器元数据，这也是堆溢出能被利用成安全漏洞的根源 |
 | 2026-08-16 | 全书收口：三个假象（独占 CPU / 独占连续内存 / 访存等速）分别由上下文切换、虚拟内存、存储层次维持，几乎所有"性能与正确性玄学"都是某个抽象的实现细节漏了出来 | 状态标记会过时——第 2、5 章其实早已学完却一直挂着 ⬜，回顾时按目录里的 summary 实际覆盖范围核对，别信旧表格 | 排障与优化都有固定的下钻顺序：先 Amdahl 测 α → 算法 → 访存模式（cache miss）→ 依赖链（延迟界限）→ 分支 → 系统层（缺页/上下文切换/D 状态），跨过任何一层直接调底层参数都是浪费 |
 | 2026-07-26 | §12.6-§12.7：多线程加速必须同时满足工作可并行、分块均衡和开销可控，并用 `S_p=T_1/T_p`、`E_p=S_p/p` 与 Amdahl 上限解释扩展曲线；线程安全最终是函数/API 的状态、所有权和调用时序契约 | 线程数不等于速度；单个方法线程安全不代表 check-then-act 安全；内部加锁也不自动可重入；返回静态对象的接口解锁后仍可能被下一次调用覆盖 | 计算任务用线程局部归约减少 atomic/cache-line 热点，并用 `perf stat` 区分串行比例、调度与带宽瓶颈；遗留 C API 优先改为显式 context、调用者缓冲区或锁内复制快照，跨模块统一锁顺序并避免锁内 callback |

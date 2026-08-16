@@ -8,10 +8,10 @@
 
 | 项目 | 内容 |
 |------|------|
-| 当前章节 | 第 12 章 并发编程（§12.1-12.7 已完成，下一步 §12.8） |
-| 已完成天数 | Day 1 - Day 28（第 1-3 章主线）、Day 31 - Day 34（第 7 章）、Day 35 - Day 42（§8.1-8.7）、第 9 章 §9.1-9.13、第 10 章 §10.1-10.12、第 11 章 §11.1-11.6、第 12 章 §12.1-12.7 |
-| 上次学习 | 2026-07-26 |
-| 下一步 | 学习第 12 章 §12.8 小结；第 6 章 §6.7、第 9 章 §9.11-9.12、第 8 章 §8.8、第 3 章 §3.10.4-3.11 待回补 |
+| 当前章节 | 全书主线已走完，总结收口于 [BOOK_SUMMARY.md](BOOK_SUMMARY.md) |
+| 已完成天数 | 第 1 章、第 2 章 §2.1-2.4、第 3 章 §3.1-3.10、第 5 章 §5.1-5.14、第 6 章 §6.1-6.6、第 7 章全章、第 8 章 §8.1-8.7、第 9 章 §9.1-9.10 + §9.13、第 10 章 §10.1-10.12、第 11 章 §11.1-11.6、第 12 章 §12.1-12.7 |
+| 上次学习 | 2026-08-16 |
+| 下一步 | 只剩两处正文待补：**§3.11 浮点代码**、**§9.11 常见的与内存有关的错误**；各章小结（§2.5/§3.12/§5.15/§6.7/§8.8/§9.12/§12.8）已由 [BOOK_SUMMARY.md](BOOK_SUMMARY.md) 统一收口；第 4 章按计划跳过不记笔记 |
 
 > 2026-06-27：提前开第 6 章 §6.1 存储技术（Day 34），完成 [Chapter6/6.1/summary.md](Chapter6/6.1/summary.md)。
 > 2026-07-01：第 10 章整章总结收口于单文件 [Chapter10/summary.md](Chapter10/summary.md)（§10.1-10.12），含 RIO 实现、`shared.c`（fork 共享偏移量）、TSan 竞态实验；解答「二进制文件怎么读」疑问。
@@ -23,10 +23,13 @@
 > 2026-07-19：第 12 章 §12.3 完成于 [Chapter12/12.3/summary.md](Chapter12/12.3/summary.md)，代码在 [Chapter12/12.3/experiments](Chapter12/12.3/experiments)——梳理线程共享/私有资源、pthread 创建/终止/join/detach/once，并用教材 thread-per-connection echo server 串起参数所有权、共享 fd 关闭语义和线程资源上限。
 > 2026-07-26：第 12 章 §12.4-§12.5 完成于 [§12.4](Chapter12/12.4/summary.md) 与 [§12.5](Chapter12/12.5/summary.md)——从变量实例、所有权、生命周期、不变量与 happens-before 统一分析同步错误根因；重点解释 one loop per thread 如何用连接单线程所有权减少锁，并扩展 bounded blocking MPMC、SPSC/per-slot-sequence MPMC ring，以及读者优先、写者优先和 FIFO 分阶段无饥饿读写锁。
 > 2026-07-26：第 12 章 §12.6-§12.7 完成于 [§12.6](Chapter12/12.6/summary.md) 与 [§12.7](Chapter12/12.7/summary.md)——§12.6 用并行归约串起任务划分、speedup/efficiency、强弱扩展、Amdahl 上限和 Linux `perf stat` 测量；§12.7 从 API 契约梳理四类线程不安全函数、可重入性、遗留库封装、参数竞态与全局锁顺序。
+> 2026-08-16：产出全书总结 [BOOK_SUMMARY.md](BOOK_SUMMARY.md)，一次性收口书中全部小结小节（§2.5/§3.12/§5.15/§6.7/§8.8/§9.12/§12.8）——含「一个程序的一生」主线图、逐章骨干与必记易错点、四条跨章纵向主线（性能定位顺序 / 一个地址的完整旅程 / 控制流突变四层次 / 边界与所有权）、一张延迟速查表（含本机实测 L1≈4·L2≈14·L3≈40·DRAM≈300+ cycle）以及验收标准七问的标准答案。同步修正 PROGRESS 中第 2、3、5、6、8、9、12 章过时的状态标记。
 
 ---
 
 ## 章节完成记录
+
+> **全书总结**：[BOOK_SUMMARY.md](BOOK_SUMMARY.md) ✅（2026-08-16）——取代书中所有小结小节，逐章骨干 + 必记易错点 + 跨章串讲 + 延迟速查表 + 验收七问答案。
 
 ### 第 1 章：计算机系统漫游 ✅
 
@@ -38,7 +41,7 @@
 | Day 4 | 1.7.1-1.7.4 | ✅ | — |
 | Day 5 | 1.8-1.10 | ✅ | — |
 
-### 第 2 章：信息的表示和处理 ⬜
+### 第 2 章：信息的表示和处理 ✅
 
 | Day | 小节 | 状态 | 总结 |
 |-----|------|------|------|
@@ -48,12 +51,13 @@
 | Day 9 | 2.2.4-2.2.5 | ✅ | [Chapter2/2.2/summary.md](Chapter2/2.2/summary.md) |
 | Day 10 | 2.2.6-2.2.8 | ✅ | [Chapter2/2.2/summary.md](Chapter2/2.2/summary.md) |
 | Day 11 | 2.3-2.3.3 | ✅ | [Chapter2/2.3/summary.md](Chapter2/2.3/summary.md) |
-| Day 12 | 2.3.4-2.3.5 | ⬜ | — |
-| Day 13 | 2.3.6-2.3.8 | ⬜ | — |
-| Day 14 | 2.4-2.4.3 | ⬜ | [Chapter2/2.4/summary.md](Chapter2/2.4/summary.md) |
-| Day 15 | 2.4.4-2.5 | ⬜ | [Chapter2/2.4/summary.md](Chapter2/2.4/summary.md) |
+| Day 12 | 2.3.4-2.3.5 乘以常数 | ✅ | [Chapter2/2.3/summary.md](Chapter2/2.3/summary.md) |
+| Day 13 | 2.3.6-2.3.8 除以 2 的幂 | ✅ | [Chapter2/2.3/summary.md](Chapter2/2.3/summary.md) |
+| Day 14 | 2.4-2.4.3 | ✅ | [Chapter2/2.4/summary.md](Chapter2/2.4/summary.md) |
+| Day 15 | 2.4.4-2.4.5 | ✅ | [Chapter2/2.4/summary.md](Chapter2/2.4/summary.md) |
+| — | 2.5 小结 | ✅ | [BOOK_SUMMARY.md](BOOK_SUMMARY.md) 收口 |
 
-### 第 3 章：程序的机器级表示 ⬜
+### 第 3 章：程序的机器级表示 🔄
 
 | Day | 小节 | 状态 | 总结 |
 |-----|------|------|------|
@@ -70,10 +74,15 @@
 | Day 26 | 3.8-3.8.5 | ✅ | [Chapter3/3.8/summary.md](Chapter3/3.8/summary.md) |
 | Day 27 | 3.9-3.9.3 | ✅ | [Chapter3/3.9/summary.md](Chapter3/3.9/summary.md) |
 | Day 28 | 3.10-3.10.3 | ✅ | [Chapter3/3.10/summary.md](Chapter3/3.10/summary.md) |
-| Day 29 | 3.10.4-3.11.1 | ⬜ | — |
-| Day 30 | 3.11.2-3.12 | ⬜ | — |
+| Day 29 | 3.10.4-3.10.5 栈保护、变长栈帧 | ✅ | [Chapter3/3.10/summary.md](Chapter3/3.10/summary.md) |
+| Day 30 | **3.11 浮点代码** | ⬜ | **待补**（AVX2、`%xmm`、浮点参数传递与比较） |
+| — | 3.12 小结 | ✅ | [BOOK_SUMMARY.md](BOOK_SUMMARY.md) 收口 |
 
-### 第 7 章：链接 ⬜
+### 第 4 章：处理器体系结构 ⏭️
+
+> 按学习计划**跳过，不记录笔记**。需要的执行模型（超标量、乱序、流水线、投机执行）已由 [§5.7](Chapter5/5.7/summary.md) 从性能视角补齐。
+
+### 第 7 章：链接 ✅
 
 | Day | 小节 | 状态 | 总结 |
 |-----|------|------|------|
@@ -84,7 +93,7 @@
 
 > 第 7 章内容较短，整章合并为单个 `Chapter7/summary.md`。
 
-### 第 8 章：异常控制流 🔄
+### 第 8 章：异常控制流 ✅
 
 | Day | 小节 | 状态 | 总结 |
 |-----|------|------|------|
@@ -96,9 +105,9 @@
 | Day 40 | 8.5.4-8.5.7 | ✅ | [Chapter8/8.5-8.6/summary.md](Chapter8/8.5-8.6/summary.md) |
 | Day 41 | 8.6 | ✅ | [Chapter8/8.5-8.6/summary.md](Chapter8/8.5-8.6/summary.md) |
 | Day 42 | 8.7 | ✅ | [Chapter8/8.7/summary.md](Chapter8/8.7/summary.md) |
-| — | 8.8 | ⬜ | 全章小结，待回补 |
+| — | 8.8 小结 | ✅ | [BOOK_SUMMARY.md](BOOK_SUMMARY.md) 收口 |
 
-### 第 9 章：虚拟内存 ⬜
+### 第 9 章：虚拟内存 🔄
 
 | Day | 小节 | 状态 | 总结 |
 |-----|------|------|------|
@@ -108,25 +117,29 @@
 | Day 45 | 9.7 | ✅ | [Chapter9/9.7-9.8/summary.md](Chapter9/9.7-9.8/summary.md) |
 | Day 46 | 9.8-9.8.4 | ✅ | [Chapter9/9.7-9.8/summary.md](Chapter9/9.7-9.8/summary.md) |
 | Day 47 | 9.9-9.10 | ✅ | [Chapter9/9.9-9.10/summary.md](Chapter9/9.9-9.10/summary.md) |
-| Day 47 | 9.11-9.12 | ⬜ | — |
-| 补充 | 9.13 内核虚拟内存说明书（ARM64/6.x，多文件） | ✅ | [9.13-kernel-vm-source](Chapter9/9.13-kernel-vm-source/00-index.md) |
+| Day 47 | **9.11 常见的与内存有关的错误** | ⬜ | **待补**（实验代码已在 `Chapter9/9.9-9.10/expirements/`） |
+| — | 9.12 小结 | ✅ | [BOOK_SUMMARY.md](BOOK_SUMMARY.md) 收口 |
+| 补充 | 9.13 内核虚拟内存说明书（ARM64/6.x，多文件） | ✅ | [9.13-kernel-vm-source](Chapter9/kernel-vm-source/00-index.md) |
+| 补充 | zswap：512MB 小内存机器的 swap 参数与优化 | ✅ | [Chapter9/zswap.md](Chapter9/zswap.md) |
 
-### 第 5 章：优化程序性能 ⬜
+### 第 5 章：优化程序性能 ✅
 
 | Day | 小节 | 状态 | 总结 |
 |-----|------|------|------|
 | Day 48 | 5.1-5.3 | ✅ | [5.1-5.3](Chapter5/5.1-5.3/summary.md) |
 | Day 49 | 5.4-5.6 | ✅ | [5.4-5.6](Chapter5/5.4-5.6/summary.md) |
 | Day 50 | 5.7 | ✅ | [5.7](Chapter5/5.7/summary.md) |
-| Day 51 | 5.8-5.10 | ⬜ | — |
-| Day 52 | 5.11-5.15 | ⬜ | — |
+| Day 51 | 5.8-5.10 循环展开、多累加器、重结合 | ✅ | [5.8-5.9](Chapter5/5.8-5.9/summary.md)（§5.10 结果总结并入） |
+| Day 52 | 5.11-5.14 限制因素、内存性能、profiling | ✅ | [5.11](Chapter5/5.11/summary.md) · [5.12-5.14](Chapter5/5.12-5.14/summary.md) |
+| — | 5.15 小结 | ✅ | [BOOK_SUMMARY.md](BOOK_SUMMARY.md) 收口 |
 
-### 第 6 章：存储器层次结构 ⬜
+### 第 6 章：存储器层次结构 ✅
 
 | Day | 小节 | 状态 | 总结 |
 |-----|------|------|------|
 | Day 52 | 6.1-6.3.2 | ✅ | [6.1](Chapter6/6.1/summary.md) · [6.2-6.3](Chapter6/6.2-6.3/summary.md) |
-| Day 53 | 6.4-6.7 | 🔄 | [6.4+6.5](Chapter6/6.4-6.5/summary.md) · [6.6](Chapter6/6.6/summary.md)（6.5 已并入 6.4；6.7 待补） |
+| Day 53 | 6.4-6.6 | ✅ | [6.4+6.5](Chapter6/6.4-6.5/summary.md) · [6.6](Chapter6/6.6/summary.md)（6.5 已并入 6.4） |
+| — | 6.7 小结 | ✅ | [BOOK_SUMMARY.md](BOOK_SUMMARY.md) 收口 |
 
 ### 第 10 章：系统级 I/O ✅
 
@@ -150,7 +163,7 @@
 | Day 57 | 11.5-11.6 HTTP/CGI/Tiny Web 服务器 | ✅ | [Chapter11/summary.md](Chapter11/summary.md) |
 | 补充 | TCP/UDP · DNS 排障 · backlog · HTTP 版本与方法 | ✅ | [Chapter11/summary.md](Chapter11/summary.md)；[tcp_udp.md](Chapter11/tcp_udp.md)；[libcurl_cpp.md](Chapter11/libcurl_cpp.md) |
 
-### 第 12 章：并发编程 🔄
+### 第 12 章：并发编程 ✅
 
 > §12.1 总结在 [Chapter12/12.1/summary.md](Chapter12/12.1/summary.md)；代码在 `Chapter12/12.1/experiments/`，包含基于进程的并发 echo 服务器/客户端、UDS/`mmap`/`eventfd` C 例程，以及可选 gRPC C++ 例程。§12.2 总结在 [Chapter12/12.2/summary.md](Chapter12/12.2/summary.md)，专题材料包括 [select](Chapter12/12.2/select.md)、[poll](Chapter12/12.2/poll.md)、[epoll](Chapter12/12.2/epoll.md)、[Reactor](Chapter12/12.2/reactor.md)、[Muduo one loop per thread](Chapter12/12.2/muduo_one_loop_per_thread.md)；配套可运行例程在 `Chapter12/12.2/experiments/`。§12.3 总结在 [Chapter12/12.3/summary.md](Chapter12/12.3/summary.md)，覆盖 POSIX 线程执行模型、生命周期管理和 thread-per-connection 的所有权规则。§12.4 总结在 [Chapter12/12.4/summary.md](Chapter12/12.4/summary.md)，覆盖共享变量判定、C++ 内存模型、同步错误根因和 one loop per thread 的所有权边界。§12.5 总结在 [Chapter12/12.5/summary.md](Chapter12/12.5/summary.md)，覆盖 semaphore/CV、生产者—消费者、死锁/饥饿，以及 SPSC/MPMC 队列和公平读写锁。§12.6 总结在 [Chapter12/12.6/summary.md](Chapter12/12.6/summary.md)，覆盖线程级并行、并行归约、speedup/efficiency、强弱扩展、Amdahl 上限和可复现测量。§12.7 总结在 [Chapter12/12.7/summary.md](Chapter12/12.7/summary.md)，覆盖四类线程不安全函数、可重入性、库函数封装、race 与 deadlock 的 API 契约。
 
@@ -159,7 +172,8 @@
 | Day 58 | 12.1 基于进程的并发编程 | ✅ | [Chapter12/12.1/summary.md](Chapter12/12.1/summary.md) |
 | Day 59 | 12.2 基于 I/O 多路复用的并发编程 | ✅ | [Chapter12/12.2/summary.md](Chapter12/12.2/summary.md)；[experiments](Chapter12/12.2/experiments)（select/poll/epoll LT + epoll ET） |
 | Day 60 | 12.3-12.4 基于线程的并发编程、共享变量 | ✅ | [§12.3](Chapter12/12.3/summary.md) · [§12.4](Chapter12/12.4/summary.md) |
-| Day 61 | 12.5-12.8 同步、并行、线程安全、竞态/死锁 | 🔄 | [§12.5](Chapter12/12.5/summary.md) · [§12.6](Chapter12/12.6/summary.md) · [§12.7](Chapter12/12.7/summary.md) 已完成；§12.8 待学习 |
+| Day 61 | 12.5-12.7 同步、并行、线程安全、竞态/死锁 | ✅ | [§12.5](Chapter12/12.5/summary.md) · [§12.6](Chapter12/12.6/summary.md) · [§12.7](Chapter12/12.7/summary.md) |
+| — | 12.8 小结 | ✅ | [BOOK_SUMMARY.md](BOOK_SUMMARY.md) 收口 |
 
 ---
 
@@ -173,9 +187,9 @@
 | 2026-06-11 | §9.1-9.3 | [Chapter9/9.1-9.5/locality/main.c](Chapter9/9.1-9.5/locality/main.c) | perf stat 测时间局部性（pass 全扫 ×10 vs 1MB 分块 ×10），首次解读混合架构 perf 输出 | 未初始化的 256MB .bss 数组实际 RSS 仅 1.5MB（共享零页），原始数据全部失真；写入初始化后 pass 版 LLC-load-misses 是 blocked 版的 12.5 倍（626K vs 50K），但因硬件预取器掩盖，墙钟时间只差 20% |
 | 2026-06-16 | 第 9 章 | [Chapter9/虚拟内存实战——日常开发场景串讲.md](Chapter9/虚拟内存实战——日常开发场景串讲.md) | 以 8 个日常场景（启动/malloc/读写文件/fork/爆栈/段错误/共享内存/TLB）+ 1 个综合排查横向串联全章，每场景配图 + 可编译代码 + 可观测命令；全部代码 gcc -Wall 验证通过 | first touch：malloc 后 RSS 1.1MB、触摸 256MB 后涨到 263MB、free 不降；COW：子进程只读 minflt 增量 0、改写 16384（=64MB/4KB）；段错误 si_code=1(SEGV_MAPERR) 对应缺页第一关；坑：子进程 `_exit` 前 printf 须 `fflush` 否则管道下全缓冲丢输出 |
 | 2026-06-28 | §5.14 | [Chapter5/5.12-5.14/expirements/dedup.c](Chapter5/5.12-5.14/expirements/dedup.c) | profile 引导优化 + Amdahl 验证 + perf 三步法（record/report/annotate）vs gprof 对比。O(n²) 去重→哈希，分段计时 dedup/checksum | Amdahl 预测 7.36× vs 实测 7.30×（误差<1%）：dedup 自身加速 187× 但整体仅 7.3×，因 checksum 优化后占 96.6% 成新瓶颈、卡在 1/(1-α)=7.62× 天花板；**gprof 翻车**——把真热点 strcmp(libc 无符号)的 63% 错归给 `_init`，因 self time 不含被调库函数；perf 采 PC 正确钉到 `__strcmp_avx2` 65%，annotate 落到 `call strcmp@plt`(24%) 指令行 |
-| 2026-06-29 | §9.13 | [Chapter9/9.13-kernel-vm-source/experiments/zero_page.c](Chapter9/9.13-kernel-vm-source/experiments/zero_page.c) | 读未初始化匿名内存（256MB/65536 页）分只读/写两阶段，量化 zero page 别名（statm RSS + stat minflt） | 只读遍历 RSS 仅 +132KB、minflt +65537（每页缺页映射共享 ZERO_PAGE 但不计 RSS）；写一遍后 RSS +256MB、minflt +65536；majflt 全程 0——「零页别名惩罚」根因坐实：`do_anonymous_page` 只读分支让所有虚拟页别名到同一物理零页 |
-| 2026-06-29 | §9.13 | [Chapter9/9.13-kernel-vm-source/experiments/vmstat_fault.c](Chapter9/9.13-kernel-vm-source/experiments/vmstat_fault.c) | minor vs major fault 分离：malloc+memset 制造 minor；fadvise(DONTNEED)+mmap+MADV_RANDOM 制造 major | minor 段 minflt 32774/majflt 0；major 段 majflt 32768（恰好=页数）/minflt 0；**必须 MADV_RANDOM**——否则 readahead+fault-around 把顺序读的 major 几乎全转成 minor（加之前 major 仅 1） |
-| 2026-06-29 | §9.13 | [Chapter9/9.13-kernel-vm-source/experiments/dirty_writeback.c](Chapter9/9.13-kernel-vm-source/experiments/dirty_writeback.c) | 持续写文件不 fsync，观察 /proc/meminfo Dirty/Writeback 水位 + 本轮吞吐曲线，看脏页回写子系统的限流（32GB/NVMe ext4 写 12GB） | 起步 ~6000MB/s（纯 page cache，Dirty 线性涨）→ ~1GB 处吞吐腰斩到 ~3000MB/s（balance_dirty_pages 软节流）→ ~2GB 后 Writeback 转非 0（flusher 介入）、Dirty 稳在 ~2.2-3.1GB 平台；**NVMe 快，全程稳在 background 水位、没撞 limit**，阈值基于可脏内存而非 MemTotal 故平台低于 32GB×10% |
+| 2026-06-29 | §9.13 | [Chapter9/9.13-kernel-vm-source/experiments/zero_page.c](Chapter9/kernel-vm-source/experiments/zero_page.c) | 读未初始化匿名内存（256MB/65536 页）分只读/写两阶段，量化 zero page 别名（statm RSS + stat minflt） | 只读遍历 RSS 仅 +132KB、minflt +65537（每页缺页映射共享 ZERO_PAGE 但不计 RSS）；写一遍后 RSS +256MB、minflt +65536；majflt 全程 0——「零页别名惩罚」根因坐实：`do_anonymous_page` 只读分支让所有虚拟页别名到同一物理零页 |
+| 2026-06-29 | §9.13 | [Chapter9/9.13-kernel-vm-source/experiments/vmstat_fault.c](Chapter9/kernel-vm-source/experiments/vmstat_fault.c) | minor vs major fault 分离：malloc+memset 制造 minor；fadvise(DONTNEED)+mmap+MADV_RANDOM 制造 major | minor 段 minflt 32774/majflt 0；major 段 majflt 32768（恰好=页数）/minflt 0；**必须 MADV_RANDOM**——否则 readahead+fault-around 把顺序读的 major 几乎全转成 minor（加之前 major 仅 1） |
+| 2026-06-29 | §9.13 | [Chapter9/9.13-kernel-vm-source/experiments/dirty_writeback.c](Chapter9/kernel-vm-source/experiments/dirty_writeback.c) | 持续写文件不 fsync，观察 /proc/meminfo Dirty/Writeback 水位 + 本轮吞吐曲线，看脏页回写子系统的限流（32GB/NVMe ext4 写 12GB） | 起步 ~6000MB/s（纯 page cache，Dirty 线性涨）→ ~1GB 处吞吐腰斩到 ~3000MB/s（balance_dirty_pages 软节流）→ ~2GB 后 Writeback 转非 0（flusher 介入）、Dirty 稳在 ~2.2-3.1GB 平台；**NVMe 快，全程稳在 background 水位、没撞 limit**，阈值基于可脏内存而非 MemTotal 故平台低于 32GB×10% |
 | 2026-07-01 | §10.8 | [Chapter10/experiments/shared.c](Chapter10/experiments/shared.c) | 对比「两次 open 同一文件」与「open 后 fork」两种打开方式下 `read` 的偏移量语义（foobar.txt 内容 `foobar`） | 两次 open → 两个独立打开文件表项、各自 k=0，两次 read 都得 `f`；open 后 fork → 父子共享同一打开文件表项、同一个 k，子读 `f` 把 k 推到 1、父接着读 `o`。**偏移量绑定在打开文件表项上**：open 次数决定表项个数、fork 决定谁共享表项；strace `-f` 下版本 B 只一次 openat + 一次 clone |
 | 2026-07-04 | 第 10 章·UDS 专题 | [Chapter10/uds_ipc.md](Chapter10/uds_ipc.md)；`experiments/` 下 `uds_server.c`·`uds_client.c`·`uds_passfd.c`·`passfd_send/recv.c`·`unix_socket.hpp`+`passfd_cpp.cpp` | UDS 本机 IPC：C/S 回显复用 RIO（`make uds`）；SCM_RIGHTS 传 fd 三版本——socketpair 父子（`passfd`）、命名 UDS 独立进程（`passfd2`）、C++17 RAII 封装（`passfd_cpp`）；server 健壮性收尾 | **传 fd 传的是内核对象非数字**：send 端 fd=5、recv 端 fd=4 却读到同一文件；机制只依赖一条已连通 AF_UNIX 连接，**与进程亲缘/建连方式无关**（socketpair 限父子，命名 UDS 任意独立进程），且 fd 不能跨机器。三个 cmsg 坑：必带 ≥1 字节数据、缓冲用 `CMSG_SPACE`/长度用 `CMSG_LEN` 别手算、收端先校验 level/type/len 再取。server 修 3 个真 bug（`!bind` 反判返回值、`buf_toupper` 越界传 RIO_BUFSIZE、路径误用常量）+ 补 SIGPIPE 忽略/accept EINTR 重试/`setvbuf` 防 `_exit` 丢日志；C++ 版结论：cmsg 机制省不掉，RAII 省掉的是 close/memset/errno 样板 |
 | 2026-07-04 | UDS·抽象命名空间 | `experiments/uds_server.c`·`uds_client.c`（`make uds_abstract`） | `@` 前缀切换抽象命名空间 vs 路径式，`fill_uds_addr()` 按 `@` 统一分流并返回精确 addrlen | 抽象式 `sun_path[0]='\0'`+名字随后：**不落文件系统、内核自动回收、无需 unlink、无 EADDRINUSE**（实测 server 杀掉可即时重启同名）；`ss -xl` 与 `/proc/net/unix` 显示 `@csapp_uds`、`/tmp` 无文件。头号坑：**addrlen 必须 `offsetof+1+strlen` 精确算**，传 `sizeof(addr)` 会把尾随填零字节算进名字→能自连却拒正确外部客户端。代价：失去文件/目录权限管控（只能 `SO_PEERCRED`）、Linux 特有。路径选择：生产用 `/run` 或 `$XDG_RUNTIME_DIR`+靠目录权限，别用 `/tmp`（符号链接/抢占攻击） |
@@ -191,6 +205,10 @@
 ## 待办
 
 - 回填存量 summary 文档到 `CLAUDE.md` 新定义的标准格式 ✅（§3.6、§2.3、§3.4 全部完成）
+- 全书总结 [BOOK_SUMMARY.md](BOOK_SUMMARY.md) ✅（2026-08-16，收口全部小结小节）
+- ⬜ **§3.11 浮点代码**：AVX2/SSE 浮点汇编、`%xmm0-15` 传参与返回、`vcomisd` 浮点比较与分支、浮点常数的加载方式
+- ⬜ **§9.11 常见的与内存有关的错误**：间接引用坏指针、读未初始化内存、栈缓冲区溢出、指针运算把元素当字节、`free` 错误（重复/偏移/非堆地址）、内存泄漏；实验代码已在 `Chapter9/9.9-9.10/expirements/`（`leak`/`race`/`alloc`），配 ASan/Valgrind 验证
+- ⏭️ 第 4 章 处理器体系结构：按计划跳过，不记录笔记
 
 ---
 
@@ -242,4 +260,5 @@
 | 2026-07-19 | §12.2：I/O 多路复用只通知 fd readiness，Reactor 再组织成“注册→等待→分发→handler 执行实际 I/O”的事件循环；select/poll 每轮全量提交与扫描，epoll 长期维护 interest set/ready list | ready 不等于有业务数据或 I/O 已完成；ET 必须 nonblocking 并把 accept/read/write 做到 `EAGAIN`；`EPOLLOUT` 只能在 outbuf 非空时按需开启，否则会 busy loop | Nginx/Redis/libuv 用少量 loop 管大量低活跃连接；Muduo one loop per thread 让每条连接固定归属一个 I/O loop，以单一所有权减少锁，重业务另交有界 worker pool并用 queue+eventfd 投递结果 |
 | 2026-07-19 | §12.3：线程把执行流与资源容器分开；同进程线程各有寄存器和栈，却共享地址空间与 fd table；thread-per-connection 用一个 detached worker 服务一个连接 | 不能传会被 accept 循环覆盖的 `&connfd`；创建成功后 main 也不能像 fork 版一样 `close(connfd)`，否则会关闭 worker 共享的同一 fd | `make demo` 让一个 worker 阻塞在延迟连接上时，其他 worker 仍及时回显；生产中通常用有界线程池或 Reactor + worker pool 控制线程、队列和背压 |
 | 2026-07-26 | §12.4-§12.5：同步正确性不是给每行补锁，而是围绕变量实例建立 identity、ownership、lifetime、invariant 和 happens-before；one loop per thread 用单连接单线程所有权主动缩小共享面 | atomic 只保证单次操作，不能自动维护 check-then-act；CV 必须等待受 mutex 保护的谓词；读者优先会饿死 writer、写者优先会饿死 reader，`std::shared_mutex` 也不承诺统一公平策略 | I/O loop + MPSC completion queue + `eventfd` 是 Reactor 跨线程回投的经典边界；SPSC 靠固定角色免 CAS，MPMC 先选 bounded mutex+CV，只有 profile 证明瓶颈后才考虑 per-slot sequence ring；公平读写锁用 FIFO 队列按 reader phase 放行 |
+| 2026-08-16 | 全书收口：三个假象（独占 CPU / 独占连续内存 / 访存等速）分别由上下文切换、虚拟内存、存储层次维持，几乎所有"性能与正确性玄学"都是某个抽象的实现细节漏了出来 | 状态标记会过时——第 2、5 章其实早已学完却一直挂着 ⬜，回顾时按目录里的 summary 实际覆盖范围核对，别信旧表格 | 排障与优化都有固定的下钻顺序：先 Amdahl 测 α → 算法 → 访存模式（cache miss）→ 依赖链（延迟界限）→ 分支 → 系统层（缺页/上下文切换/D 状态），跨过任何一层直接调底层参数都是浪费 |
 | 2026-07-26 | §12.6-§12.7：多线程加速必须同时满足工作可并行、分块均衡和开销可控，并用 `S_p=T_1/T_p`、`E_p=S_p/p` 与 Amdahl 上限解释扩展曲线；线程安全最终是函数/API 的状态、所有权和调用时序契约 | 线程数不等于速度；单个方法线程安全不代表 check-then-act 安全；内部加锁也不自动可重入；返回静态对象的接口解锁后仍可能被下一次调用覆盖 | 计算任务用线程局部归约减少 atomic/cache-line 热点，并用 `perf stat` 区分串行比例、调度与带宽瓶颈；遗留 C API 优先改为显式 context、调用者缓冲区或锁内复制快照，跨模块统一锁顺序并避免锁内 callback |
